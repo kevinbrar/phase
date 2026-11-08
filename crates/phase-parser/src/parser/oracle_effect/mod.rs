@@ -49699,13 +49699,13 @@ fn parse_effect_chain_ir_body(
             && has_anaphoric_reference(&recipient_anaphor_lower)
             && !matches!(if_you_do_anchor, Some(TargetFilter::SelfRef))
             && !typed_trigger_subject
-            && !clause_announces_typed_target
             && !explicit_any_target_clause(&clause.effect, &text_lower)
             && !replace_fight_subject_with_parent_if_anaphoric_subject(
                 &text_lower,
                 &mut clause.effect,
             )
             && !bind_self_ref_damage_subject(&mut clause.effect)
+            && !clause_announces_typed_target
         {
             // CR 608.2c: when the rewrite would collapse a tracked-set
             // target the clause text names via "this way", refuse the
@@ -49779,7 +49779,6 @@ fn parse_effect_chain_ir_body(
             })
             && has_anaphoric_reference(&recipient_anaphor_lower)
             && !typed_trigger_subject
-            && !clause_announces_typed_target
             && !explicit_any_target_clause(&clause.effect, &text_lower)
             && !replace_fight_subject_with_parent_if_anaphoric_subject(
                 &text_lower,
@@ -49790,6 +49789,7 @@ fn parse_effect_chain_ir_body(
             // clobbering the recipient (Throw from the Saddle, Wolf Strike,
             // Burrog Barrage — conditional-boost head).
             && !bind_anaphoric_damage_subject_keep_recipient(&mut clause.effect)
+            && !clause_announces_typed_target
         {
             // CR 608.2c: same fail-closed refusal as the conditional arm
             // above — see `anaphor_rewrite_would_drop_this_way_binding`.
@@ -49812,7 +49812,6 @@ fn parse_effect_chain_ir_body(
             && chain_has_prior_typed_referent(builder.clauses(), false)
             && has_anaphoric_reference(&recipient_anaphor_lower)
             && !typed_trigger_subject
-            && !clause_announces_typed_target
             && !explicit_any_target_clause(&clause.effect, &text_lower)
             && !replace_fight_subject_with_parent_if_anaphoric_subject(
                 &text_lower,
@@ -49823,6 +49822,7 @@ fn parse_effect_chain_ir_body(
             // clobbering the recipient (Ambuscade, Clear Shot, Rabid Gnaw —
             // unconditional-boost head).
             && !bind_anaphoric_damage_subject_keep_recipient(&mut clause.effect)
+            && !clause_announces_typed_target
         {
             // CR 608.2c: same fail-closed refusal as the conditional arm
             // above — see `anaphor_rewrite_would_drop_this_way_binding`.
