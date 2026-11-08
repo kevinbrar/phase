@@ -2356,6 +2356,7 @@ fn parse_number_of_inner(input: &str) -> OracleResult<'_, QuantityRef> {
         // count; both lead with "times you" and must precede the generic arms.
         alt((
             parse_entered_this_turn_ref,
+            parse_number_of_objects_put_into_graveyards_from_battlefield_this_turn,
             parse_number_of_creatures_died_this_turn,
             parse_number_of_objects_exiled_under_controller_this_turn,
             parse_number_of_sacrificed_this_turn,
@@ -7103,6 +7104,29 @@ fn parse_creatures_died_this_turn_tail(
 fn parse_for_each_creature_died_this_turn(input: &str) -> OracleResult<'_, QuantityRef> {
     let (rest, (controller, nontoken)) = parse_creatures_died_this_turn_tail(input)?;
     Ok((rest, creatures_died_this_turn_ref(controller, nontoken)))
+}
+
+/// CR 107.3c + CR 608.2i: Count a typed set of objects that moved from the
+/// battlefield to a graveyard this turn, using their characteristics at that time.
+fn parse_number_of_objects_put_into_graveyards_from_battlefield_this_turn(
+    input: &str,
+) -> OracleResult<'_, QuantityRef> {
+    let (filter, rest) = parse_type_phrase_folding(input);
+    if !quantity_filter_has_meaningful_content(&filter) {
+        return Err(oracle_err(input));
+    }
+    let (rest, _) = opt(tag(" that were")).parse(rest)?;
+    let (rest, _) = tag(" put into ").parse(rest)?;
+    let (rest, _) = alt((tag("a graveyard"), tag("graveyards"))).parse(rest)?;
+    let (rest, _) = tag(" from the battlefield this turn").parse(rest)?;
+    Ok((
+        rest,
+        QuantityRef::ZoneChangeCountThisTurn {
+            from: Some(Zone::Battlefield),
+            to: Some(Zone::Graveyard),
+            filter,
+        },
+    ))
 }
 
 /// CR 700.4: Parse "the number of creature(s) that died this turn" → the same
@@ -13731,6 +13755,37 @@ mod tests {
                 };
                 assert_eq!(tf.controller, None, "{phrase:?} must not scope controller");
             }
+        }
+    }
+
+    #[test]
+    fn parse_number_of_artifacts_put_into_graveyards_from_battlefield() {
+        for (phrase, expected_type) in [
+            (
+                "the number of artifacts that were put into graveyards from the battlefield this turn",
+                TypeFilter::Artifact,
+            ),
+            (
+                "the number of permanents put into a graveyard from the battlefield this turn",
+                TypeFilter::Permanent,
+            ),
+        ] {
+            let (rest, quantity) = parse_quantity_ref(phrase)
+                .unwrap_or_else(|_| panic!("{phrase:?} should parse"));
+            assert_eq!(rest, "");
+            let QuantityRef::ZoneChangeCountThisTurn {
+                from,
+                to,
+                filter: TargetFilter::Typed(filter),
+            } = quantity
+            else {
+                panic!("expected a filtered zone-change count, got {quantity:?}");
+            };
+            assert_eq!(from, Some(Zone::Battlefield));
+            assert_eq!(to, Some(Zone::Graveyard));
+            assert_eq!(filter.type_filters, vec![expected_type]);
+            assert_eq!(filter.controller, None);
+            assert!(filter.properties.is_empty());
         }
     }
 
