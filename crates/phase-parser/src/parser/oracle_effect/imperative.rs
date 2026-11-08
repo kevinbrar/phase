@@ -48,7 +48,7 @@ use crate::parser::oracle_nom::target::{controller_phrase_among, ControllerPhras
 use crate::parser::oracle_static::{parse_activated_ability_cost_head, ActivatedAbilityCostHead};
 use crate::parser::oracle_static::{
     parse_continuous_modifications, parse_may_look_at_face_down_filter,
-    parse_quoted_ability_modifications,
+    parse_quoted_ability_modifications, parse_static_line,
 };
 use crate::types::ability::{
     is_oneshot_target_source_prevent_shape, AbilityCondition, AbilityCost, AbilityDefinition,
@@ -190,6 +190,38 @@ pub(crate) fn try_parse_activated_ability_cost_reduction_effect(
             .modifications(vec![ContinuousModification::AddStaticMode {
                 mode: reduce_mode,
             }])],
+        duration: Some(Duration::UntilEndOfTurn),
+        target: None,
+        end_cost: None,
+    })
+}
+
+/// CR 606.3 + CR 304.5 + CR 611.2a + CR 611.2c: a turn-scoped loyalty timing
+/// permission reuses the parsed static mode as a continuous modification
+/// carried by a transient effect, so its rules-modifying affected filter
+/// remains live.
+pub(crate) fn try_parse_loyalty_timing_permission_effect(tp: TextPair) -> Option<Effect> {
+    let text = match super::lower::strip_leading_duration(tp.original) {
+        Some((Duration::UntilEndOfTurn, body)) => body,
+        Some(_) => return None,
+        None => tp.original,
+    };
+    let mut static_def = parse_static_line(text)?;
+    if !matches!(
+        &static_def.mode,
+        crate::types::statics::StaticMode::ActivateAsInstant {
+            cost_category: crate::types::ability::CostCategory::PaysLoyalty,
+            keyword: None,
+        }
+    ) {
+        return None;
+    }
+    let mode = static_def.mode.clone();
+    static_def.modifications =
+        vec![crate::types::ability::ContinuousModification::AddStaticMode { mode }];
+
+    Some(Effect::GenericEffect {
+        static_abilities: vec![static_def],
         duration: Some(Duration::UntilEndOfTurn),
         target: None,
         end_cost: None,

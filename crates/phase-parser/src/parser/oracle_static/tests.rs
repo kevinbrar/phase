@@ -13064,6 +13064,32 @@ fn static_loyalty_timing_permission_subject_axis_composes() {
     assert_eq!(def.condition, None);
 }
 
+/// CR 606.3 + CR 304.5: Jace's Machinations scopes its temporary timing
+/// permission to the named planeswalker subtype, not every planeswalker.
+#[test]
+fn static_loyalty_timing_permission_scopes_to_named_planeswalker_subtype() {
+    let def = parse_static_line(
+        "You may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant.",
+    )
+    .expect("Jace's typed loyalty timing permission must parse");
+    assert_eq!(
+        def.mode,
+        StaticMode::ActivateAsInstant {
+            cost_category: CostCategory::PaysLoyalty,
+            keyword: None,
+        }
+    );
+    let Some(TargetFilter::Typed(affected)) = def.affected else {
+        panic!("the permission must retain its typed affected set");
+    };
+    assert_eq!(affected.controller, Some(ControllerRef::You));
+    assert_eq!(affected.type_filters.len(), 2);
+    assert!(affected.type_filters.contains(&TypeFilter::Planeswalker));
+    assert!(affected
+        .type_filters
+        .contains(&TypeFilter::Subtype("Jace".to_string())));
+}
+
 /// CR 304.5: the "on any player's turn" infix is optional — instant timing
 /// already spans any player's turn, so the bare tail parses to the same
 /// permission rather than failing closed. Combinator pin: no printed card

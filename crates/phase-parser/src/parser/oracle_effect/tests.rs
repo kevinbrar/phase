@@ -9974,6 +9974,62 @@ fn parse_card(
     parse_oracle_text(text, name, &owned(keywords), &owned(types), &[])
 }
 
+#[test]
+fn jace_machinations_full_card_permission_and_empower_parse() {
+    use crate::types::ability::{ContinuousModification, Duration, QuantityExpr};
+    use crate::types::statics::StaticMode;
+
+    let parsed = parse_card(
+        "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant.\n\
+         Empower Jace 8. (Put eight loyalty counters on a Jace token you control. If you don't control one, first create a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+        "Jace's Machinations",
+        &[],
+        &["Instant"],
+    );
+    assert_eq!(parsed.abilities.len(), 1, "{:#?}", parsed.abilities);
+    let ability = &parsed.abilities[0];
+    let Effect::GenericEffect {
+        static_abilities,
+        duration: Some(Duration::UntilEndOfTurn),
+        ..
+    } = &*ability.effect
+    else {
+        panic!("first clause must be a temporary GenericEffect: {ability:#?}");
+    };
+    assert!(static_abilities.iter().any(|static_def| {
+        matches!(
+            &static_def.mode,
+            StaticMode::ActivateAsInstant {
+                cost_category: crate::types::ability::CostCategory::PaysLoyalty,
+                keyword: None,
+            }
+        ) && static_def
+            .modifications
+            .contains(&ContinuousModification::AddStaticMode {
+                mode: StaticMode::ActivateAsInstant {
+                    cost_category: crate::types::ability::CostCategory::PaysLoyalty,
+                    keyword: None,
+                },
+            })
+    }));
+    let empower = ability
+        .sub_ability
+        .as_deref()
+        .expect("Empower Jace is the next clause");
+    assert!(matches!(
+        &*empower.effect,
+        Effect::EmpowerJace {
+            count: QuantityExpr::Fixed { value: 8 }
+        }
+    ));
+    assert!(
+        chain_defs(ability)
+            .iter()
+            .all(|def| !matches!(&*def.effect, Effect::Unimplemented { .. })),
+        "no Unimplemented effect may remain: {ability:#?}"
+    );
+}
+
 const CYCLONE_ORACLE: &str = "At the beginning of your upkeep, put a wind counter on this \
      enchantment, then sacrifice this enchantment unless you pay {G} for each wind counter on \
      it. If you pay, this enchantment deals damage equal to the number of wind counters on it \

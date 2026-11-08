@@ -30244,6 +30244,17 @@ fn lower_subject_predicate_ast_body(
         damage_context
     };
 
+    // CR 606.3 + CR 304.5: this rules permission is a subject-predicate
+    // imperative, but its affected filter belongs to the permission itself,
+    // not to a subject parsed from "you may activate".
+    let lower = original_clause.to_lowercase();
+    if let Some(effect) = imperative::try_parse_loyalty_timing_permission_effect(TextPair::new(
+        original_clause,
+        &lower,
+    )) {
+        return parsed_clause(effect);
+    }
+
     match predicate {
         PredicateAst::Continuous {
             effect,

@@ -376,26 +376,24 @@ fn bind_transient_effect(
     end_permission: Option<&EndEffectPermission>,
     modifications: Vec<ContinuousModification>,
 ) {
-    // CR 708.5: A duration-bound "you may look at face-down [permanents] you don't
-    // control any time" permission (Lumbering Laundry) is a *player-scoped* look
-    // permission, not an object grant. Unlike a pump or keyword grant, the set of
-    // face-down permanents the looker may see is re-evaluated continuously at look
-    // time (a permanent turned face down after this resolves but before end of
-    // turn is still visible to the looker), so the affected face-down filter must
-    // ride on the TCE intact rather than be expanded to a fixed `SpecificObject`
-    // set by the broadcast branch below. Register ONE TCE whose `controller` is
-    // the looker and whose `affected` keeps the face-down/controller filter; the
-    // visibility check (`viewer_may_look_at_face_down`) reads it exactly like the
-    // printed `MayLookAtFaceDown` static, evaluating the filter against each
-    // face-down permanent from the looker's perspective.
-    if modifications.iter().any(|m| {
+    // CR 611.2c: rules-modifying permissions keep their affected filters live.
+    // `ActivateAsInstant` (Jace's Machinations) is controlled by its creator and
+    // re-evaluates the Jace/controller filter as loyalty abilities are activated;
+    // `MayLookAtFaceDown` has the same player-scoped shape. Preserve one TCE
+    // instead of expanding either filter to a fixed object set.
+    let is_dynamic_permission = matches!(
+        &static_def.mode,
+        crate::types::statics::StaticMode::ActivateAsInstant { .. }
+    ) || modifications.iter().any(|m| {
         matches!(
             m,
             ContinuousModification::AddStaticMode {
-                mode: crate::types::statics::StaticMode::MayLookAtFaceDown,
+                mode: crate::types::statics::StaticMode::MayLookAtFaceDown
+                    | crate::types::statics::StaticMode::ActivateAsInstant { .. },
             }
         )
-    }) {
+    });
+    if is_dynamic_permission {
         if let Some(affected) = static_def.affected.clone() {
             install_transient(
                 state,
