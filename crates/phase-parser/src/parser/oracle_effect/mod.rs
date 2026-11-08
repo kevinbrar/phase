@@ -49705,7 +49705,10 @@ fn parse_effect_chain_ir_body(
                 &mut clause.effect,
             )
             && !bind_self_ref_damage_subject(&mut clause.effect)
-            && !clause_announces_typed_target
+            && !(condition
+                .as_ref()
+                .is_some_and(AbilityCondition::has_when_you_do_marker)
+                && clause_announces_typed_target)
         {
             // CR 608.2c: when the rewrite would collapse a tracked-set
             // target the clause text names via "this way", refuse the

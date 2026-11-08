@@ -32,46 +32,35 @@
 //!     `TargetFilter::LastZoneChanged` during assembly, before that later lift
 //!     can run.
 //!
-//! Two more cards (added for PR #8250 review) pin the NEGATIVE space of that
-//! same rebind — cards in the identical `Discard`/`Sacrifice` +
-//! `ZoneChangedThisWay { destination: None }` shape whose reflexive rider is
-//! a `DealDamage` with its OWN independently-chosen target, not a bare
-//! pronoun referring to the discarded card:
+//! Cragganwick Cremator pins the NEGATIVE space of that same rebind: its
+//! `If you discard ... this way` rider is still part of the entering trigger,
+//! so its damage recipient is the trigger's `ParentTarget`, not the discarded
+//! card. This differs from `When you discard ... this way` (e.g. Narset), which
+//! creates a reflexive triggered ability with its own target selection.
 //!
 //!   * **Cragganwick Cremator** — ETB trigger body "discard a card at random.
 //!     If you discard a creature card this way, this creature deals damage
 //!     equal to that card's power to target player or planeswalker." The
 //!     damage amount ("that card's power") legitimately reads the discarded
-//!     creature via CR 608.2k demonstrative reference, but the damage
-//!     RECIPIENT ("target player or planeswalker") is a fresh, independently
-//!     declared target — parsed as `DealDamage { target: ParentTarget, .. }`
-//!     for the ordinary reason `ParentTarget` is used throughout the engine
-//!     (CR 601.2c: an ability's targets are all chosen once, when it is put
-//!     on the stack, regardless of nesting depth — `ParentTarget` here means
-//!     "the target chosen for this whole ability," not "the discarded card").
-//!   * **Narset of the Ancient Way** (-2) — "Draw a card, then you may discard
-//!     a card. When you discard a nonland card this way, Narset deals damage
-//!     equal to that card's mana value to target creature or planeswalker."
-//!     Same shape: the amount reads the discarded card's mana value, but the
-//!     recipient is an independent "target creature or planeswalker".
+//!     creature via CR 608.2k demonstrative reference. The recipient is chosen
+//!     with the ETB trigger and remains its `ParentTarget`.
+//!
+//!   The `When` rider on Narset of the Ancient Way is a separate reflexive
+//!   triggered ability under CR 603.12, so its "target creature or planeswalker"
+//!   is announced when that reflexive trigger is put on the stack. Its runtime
+//!   target choice and discarded-card mana-value binding are exercised in
+//!   `queen_parser_near_misses`.
 //!
 //!   A prior version of `rebind_zone_changed_this_way_pronoun_to_moved_object`
-//!   walked EVERY `TargetFilter::ParentTarget` in the gated rider via
+//!   walked EVERY `TargetFilter::ParentTarget` in Cragganwick's gated rider via
 //!   `each_target_filter_mut` (which also visits `DealDamage.target`), so it
-//!   rewrote both cards' damage recipients from "target player or
-//!   planeswalker" / "target creature or planeswalker" to
-//!   `TargetFilter::LastZoneChanged` — hijacking the damage onto the
-//!   discarded card instead of the chosen recipient. The fix narrows the
-//!   rebind to `Effect::ChangeZone`'s own `target` field only (the shape that
-//!   actually moves the referenced object per Silvan Reveler's "put it …
+//!   rewrote the recipient to `TargetFilter::LastZoneChanged`. The fix narrows
+//!   the rebind to `Effect::ChangeZone`'s own `target` field only (the shape
+//!   that actually moves the referenced object per Silvan Reveler's "put it …
 //!   onto the battlefield"), leaving `DealDamage` and every other sibling
 //!   effect in the rider untouched. `cragganwick_cremator_damages_targeted_player_not_discarded_card`
-//!   and `narset_deals_damage_to_targeted_permanent_not_discarded_card` below
-//!   pin the parsed `DealDamage.target` field directly (`ParentTarget`, not
-//!   `LastZoneChanged`) — the precise AST-level regression the review
-//!   flagged — then drive a full resolution as an end-to-end sanity check that
-//!   a supplied target actually receives the damage. (Verified locally:
-//!   reinstating the blanket walk flips the AST assertion in both tests.)
+//!   pins the parsed `DealDamage.target` as `ParentTarget` and drives a full
+//!   resolution as an end-to-end sanity check.
 //!
 //! These tests drive the REAL pipeline: the authoritative Oracle body is parsed
 //! with `parse_effect_chain` (Talion's Messenger / The Ancient One) or the
@@ -228,14 +217,11 @@ fn cragganwick_cremator_damages_selected_player_not_discarded_card() {
     assert_eq!(runner.state().objects[&discarded].zone, Zone::Graveyard);
 }
 
-/// CR 603.12 + CR 603.3d (fail closed): Narset's −2 reflexive ("When you discard
-/// a nonland card this way, Narset deals damage equal to that card's mana value
-/// to target creature or planeswalker") has its explicit recipient misbound to
-/// the parent's target by the gated-anaphor rewrite. A reflexive created by a
-/// discard has no parent target to inherit, so the clause is honestly
-/// unsupported rather than a damage effect that can never choose its target.
+/// CR 603.12 + CR 603.3d: Narset's reflexive ability announces its own target
+/// when the trigger is put on the stack; its demonstrative mana-value amount
+/// refers to the card discarded this way.
 #[test]
-fn narset_reflexive_with_a_misbound_recipient_fails_closed() {
+fn narset_reflexive_keeps_its_declared_target() {
     let def = parse_effect_chain(NARSET_BODY, AbilityKind::Spell);
     let reflexive = def
         .sub_ability
@@ -252,7 +238,10 @@ fn narset_reflexive_with_a_misbound_recipient_fails_closed() {
     assert!(
         matches!(
             reflexive.effect.as_ref(),
-            Effect::Unimplemented { name, .. } if name == "zone_change_reflexive_unbound_referent"
+            Effect::DealDamage {
+                target: engine::types::ability::TargetFilter::Or { filters },
+                ..
+            } if filters.len() == 2
         ),
         "got {:?}",
         reflexive.effect
@@ -964,12 +953,10 @@ fn narset_minus_two_ability() -> engine::types::ability::AbilityDefinition {
     minus_two
 }
 
-/// CR 603.12 + CR 701.9a (fail closed): the full printed Narset −2 through the
-/// production parser fails closed on its reflexive clause. The #8250
-/// recipient-rebind regression stays pinned on its supported "If" sibling,
-/// `cragganwick_cremator_damages_targeted_player_not_discarded_card`.
+/// CR 603.12 + CR 701.9a: the full printed Narset −2 keeps its independently
+/// announced target on the reflexive trigger.
 #[test]
-fn narset_printed_minus_two_reflexive_fails_closed() {
+fn narset_printed_minus_two_reflexive_keeps_its_declared_target() {
     let def = narset_minus_two_ability();
     let reflexive = def
         .sub_ability
@@ -979,7 +966,10 @@ fn narset_printed_minus_two_reflexive_fails_closed() {
     assert!(
         matches!(
             reflexive.effect.as_ref(),
-            Effect::Unimplemented { name, .. } if name == "zone_change_reflexive_unbound_referent"
+            Effect::DealDamage {
+                target: engine::types::ability::TargetFilter::Or { filters },
+                ..
+            } if filters.len() == 2
         ),
         "got {:?}",
         reflexive.effect

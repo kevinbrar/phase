@@ -42,21 +42,10 @@ from among them onto the battlefield. Put the rest on the bottom of your library
 order. When a creature is put onto the battlefield this way, it deals damage equal to its power \
 to target creature an opponent controls.";
 
-/// The same body under an "If" head: a resolution-time condition (CR 608.2c),
-/// so the clause stays supported and its amount anaphor can be driven here. The
-/// printed "When" head is a CR 603.12 reflexive whose recipient is misbound to
-/// the parent's target, so the printed card fails closed (pinned below).
-const VIVIEN_IF_HEAD: &str = "Look at the top seven cards of your library. You may put a creature \
-card from among them onto the battlefield. Put the rest on the bottom of your library in a random \
-order. If a creature is put onto the battlefield this way, it deals damage equal to its power \
-to target creature an opponent controls.";
-
-/// CR 603.12 + CR 603.3d (fail closed): the printed reflexive's explicit
-/// recipient ("target creature an opponent controls") is misbound to the
-/// parent's target, and a reflexive created by the Dig has no parent target to
-/// inherit, so the clause is honestly unsupported.
+/// CR 603.12 + CR 603.3d: the printed reflexive announces its own target when
+/// the trigger is put on the stack; the amount refers to the entering creature.
 #[test]
-fn vivien_invocation_printed_reflexive_fails_closed() {
+fn vivien_invocation_printed_reflexive_keeps_its_target() {
     let parsed = parse_oracle_text(
         VIVIEN,
         "Vivien's Invocation",
@@ -76,23 +65,27 @@ fn vivien_invocation_printed_reflexive_fails_closed() {
     assert!(
         matches!(
             reflexive.effect.as_ref(),
-            Effect::Unimplemented { name, .. } if name == "zone_change_reflexive_unbound_referent"
+            Effect::DealDamage {
+                target: engine::types::ability::TargetFilter::Typed(_),
+                ..
+            }
         ),
         "got {:?}",
         reflexive.effect
     );
 }
 
-/// CR 603.2 + CR 208.1 + CR 608.2: the reflexive trigger deals damage equal to
-/// the ENTERING creature's power. A power-4 entering creature deals 4 to a 4/7
-/// recipient (survives, but marked exactly 4 — discriminating both 0 and 7).
+/// CR 603.2 + CR 603.12 + CR 208.1 + CR 608.2: the printed reflexive trigger
+/// deals damage equal to the ENTERING creature's power. A power-4 entering
+/// creature deals 4 to a 4/7 recipient (survives, but marked exactly 4 —
+/// discriminating both 0 and 7).
 #[test]
 fn vivien_invocation_reflexive_trigger_deals_entering_creatures_power() {
     // The damage clause as the PRODUCTION parser lowers it (the amount scope is
     // exactly what the regression touched). Extract it verbatim — do not
     // hand-author the amount.
     let parsed = parse_oracle_text(
-        VIVIEN_IF_HEAD,
+        VIVIEN,
         "Vivien's Invocation",
         &[],
         &["Sorcery".to_string()],
@@ -132,13 +125,10 @@ fn vivien_invocation_reflexive_trigger_deals_entering_creatures_power() {
     let mut runner = scenario.build();
 
     // Build the reflexive triggered ability exactly as it resolves: source = the
-    // spell (no power), the single chosen recipient as its target, and the
-    // trigger event = the entering creature's zone change (CR 603.7c), which
-    // seeds `ObjectScope::Anaphoric`'s trigger-event-source referent. The amount
-    // (`Power{Anaphoric}` after the fix) is taken verbatim from the production
-    // parse; the recipient slot is supplied directly because Vivien's parsed
-    // recipient is `ParentTarget` (a separate, out-of-scope concern) — the
-    // variable under test is the per-power AMOUNT referent, not the recipient.
+    // spell (no power), the chosen recipient as its target, and the trigger
+    // event = the entering creature's zone change (CR 603.7c), which seeds
+    // `ObjectScope::Anaphoric`'s trigger-event-source referent. Both the damage
+    // effect and its amount are taken from the production parse.
     let resolved =
         ResolvedAbility::new(damage_effect, vec![TargetRef::Object(recipient)], spell, P0);
     let entering_snapshot = runner.state().objects[&entering].snapshot_for_zone_change(
