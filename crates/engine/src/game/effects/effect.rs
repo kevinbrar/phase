@@ -305,6 +305,27 @@ fn install_transient(
                 .map(|occurrence| occurrence.caster),
         );
     }
+    // CR 611.2c + CR 400.7: an object-scoped graveyard-cast permission is
+    // fixed to this recipient's incarnation. Other object grants keep their
+    // existing zone-change behavior, including CR 400.7a stack-to-battlefield
+    // carryover for characteristic-changing effects.
+    let affected_recipient = if modifications.iter().any(|modification| {
+        matches!(
+            modification,
+            ContinuousModification::AddStaticMode {
+                mode: crate::types::statics::StaticMode::GraveyardCastPermission { .. },
+            }
+        )
+    }) {
+        match &affected {
+            TargetFilter::SpecificObject { id } => state.objects.get(id).map(|object| {
+                crate::types::identifiers::ObjectIncarnationRef::of(*id, object.incarnation)
+            }),
+            _ => None,
+        }
+    } else {
+        None
+    };
     state.add_transient_continuous_effect_inner(
         ability.source_id,
         ability.controller,
@@ -315,6 +336,7 @@ fn install_transient(
         end_permission.cloned(),
         // CR 201.5a: a granted ability's effect names the object that granted it.
         TransientContinuousEffectBindings {
+            affected_recipient,
             granting_object: ability.context.granting_object,
             ..TransientContinuousEffectBindings::default()
         },
@@ -960,12 +982,14 @@ fn bind_transient_effect(
             // Broadcast filter: find matching objects at resolution time and bind each.
             // CR 107.3a + CR 601.2b: ability-context filter evaluation.
             let ctx = filter::FilterContext::from_ability(ability);
-            let matching: Vec<ObjectId> = state
-                .battlefield
-                .iter()
-                .filter(|obj_id| filter::matches_target_filter(state, **obj_id, &filter, &ctx))
-                .copied()
-                .collect();
+            let matching: Vec<ObjectId> = crate::game::layers::generic_effect_candidate_ids(
+                state,
+                &filter,
+                ability.source_id,
+            )
+            .into_iter()
+            .filter(|obj_id| filter::matches_target_filter(state, *obj_id, &filter, &ctx))
+            .collect();
             for obj_id in matching {
                 install_transient(
                     state,

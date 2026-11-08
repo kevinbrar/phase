@@ -1326,6 +1326,11 @@ fn def_tree_has_target_replacement(def: &AbilityDefinition) -> bool {
 fn static_carries_optional_modification(s: &StaticDefinition) -> bool {
     s.modifications.iter().any(|m| match m {
         ContinuousModification::AssignDamageAsThoughUnblocked => true,
+        // CR 601.3 + CR 611.2a: casting a card under a granted graveyard
+        // permission is an opt-in choice, even when carried by a temporary effect.
+        ContinuousModification::AddStaticMode {
+            mode: StaticMode::GraveyardCastPermission { .. },
+        } => true,
         ContinuousModification::GrantTrigger { trigger } => trigger_tree_has_optional(trigger),
         ContinuousModification::GrantAbility { definition } => def_tree_has_optional(definition),
         // CR 113.3d + CR 613.1f: GrantStaticAbility conveys a static as if printed on the

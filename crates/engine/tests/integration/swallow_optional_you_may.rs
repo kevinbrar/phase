@@ -383,15 +383,10 @@ fn hades_graveyard_play_permission_is_limited_to_your_turns() {
     assert_cast_rejected(&mut runner, second);
 }
 
-/// CR 207.2d + CR 604.2 + CR 305.1: the quoted grants on Kethis and Case of the
-/// Uneaten Feast are carried as `ContinuousModification::AddStaticMode`, which
-/// `static_carries_optional_modification` does not yet recognize — so their
-/// Optional_YouMay warnings must survive and keep the cards demoted.
-/// Conservative-red by design: the fix's scope deliberately excludes the
-/// `AddStaticMode` recognition arm, and dropping these warnings without that arm
-/// would be a false green.
+/// CR 601.3 + CR 611.2a: Kethis and Case of the Uneaten Feast carry their
+/// graveyard-cast permission as `ContinuousModification::AddStaticMode`.
 #[test]
-fn kethis_and_case_of_the_uneaten_feast_stay_red_honest() {
+fn kethis_and_case_of_the_uneaten_feast_recognize_optional_cast_permissions() {
     for (oracle, name, types) in [
         (KETHIS_ORACLE, "Kethis, the Hidden Hand", &["Creature"][..]),
         (
@@ -415,11 +410,118 @@ fn kethis_and_case_of_the_uneaten_feast_stay_red_honest() {
             "{name}: the AddStaticMode {{ GraveyardCastPermission }} carrier must be present"
         );
         assert!(
-            has_swallowed_detector(&parsed, "Optional_YouMay"),
-            "{name}'s AddStaticMode-carried grant is not recognized as an optionality \
-             carrier yet and must stay red: {:?}",
+            !tree_has_unimplemented(&parsed),
+            "{name}: the quoted permission must remain executable: {:?}",
             parsed.parse_warnings
         );
+        assert!(
+            !has_swallowed_detector(&parsed, "Optional_YouMay"),
+            "{name}'s AddStaticMode-carried graveyard permission accounts for its 'you may': {:?}",
+            parsed.parse_warnings
+        );
+    }
+}
+
+/// CR 611.2c + CR 514.2: Case grants permission only to creature cards that
+/// are in the graveyard when its solved ability resolves, and only until cleanup.
+#[test]
+fn case_of_the_uneaten_feast_grants_only_to_resolution_time_graveyard_creatures() {
+    let parsed = parse_oracle_text(
+        CASE_OF_THE_UNEATEN_FEAST_ORACLE,
+        "Case of the Uneaten Feast",
+        &keyword_input(),
+        &["Enchantment".to_string()],
+        &[],
+    );
+    assert!(carries_add_static_mode_graveyard_permission(&parsed));
+    assert!(
+        !tree_has_unimplemented(&parsed),
+        "{:?}",
+        parsed.parse_warnings
+    );
+
+    let mut scenario = GameScenario::new();
+    scenario.at_phase(Phase::PreCombatMain);
+    let case = scenario
+        .add_creature(P0, "Case of the Uneaten Feast", 0, 0)
+        .as_enchantment()
+        .with_subtypes(vec!["Case"])
+        .from_oracle_text(CASE_OF_THE_UNEATEN_FEAST_ORACLE)
+        .id();
+    let castable = scenario
+        .add_creature_to_graveyard(P0, "Castable Creature", 2, 2)
+        .with_mana_cost(ManaCost::zero())
+        .id();
+    let expires_a = scenario
+        .add_creature_to_graveyard(P0, "First Expiring Creature", 2, 2)
+        .with_mana_cost(ManaCost::zero())
+        .id();
+    let expires_b = scenario
+        .add_creature_to_graveyard(P0, "Second Expiring Creature", 2, 2)
+        .with_mana_cost(ManaCost::zero())
+        .id();
+    let noncreature = scenario
+        .add_spell_to_graveyard(P0, "Graveyard Instant", true)
+        .from_oracle_text("You gain 1 life.")
+        .with_mana_cost(ManaCost::zero())
+        .id();
+    let late = scenario.add_creature(P0, "Late Creature", 2, 2).id();
+    let murder_a = scenario
+        .add_spell_to_hand_from_oracle(P0, "Murder", true, "Destroy target creature.")
+        .with_mana_cost(ManaCost::zero())
+        .id();
+    let murder_b = scenario
+        .add_spell_to_hand_from_oracle(P0, "Murder", true, "Destroy target creature.")
+        .with_mana_cost(ManaCost::zero())
+        .id();
+    let mut runner = scenario.build();
+    // Solved is the activated ability's prerequisite; Case solving has
+    // independent CR 719.3a runtime coverage.
+    runner
+        .state_mut()
+        .objects
+        .get_mut(&case)
+        .expect("Case on the battlefield")
+        .case_state
+        .as_mut()
+        .expect("Case state")
+        .is_solved = true;
+
+    assert!(!offered_to(&runner, P0, castable));
+    runner.activate(case, 0).resolve();
+    assert!(runner.state().stack.is_empty());
+    assert!(matches!(
+        runner.state().waiting_for,
+        WaitingFor::Priority { player: P0 }
+    ));
+    for card in [castable, expires_a, expires_b] {
+        assert!(
+            offered_to(&runner, P0, card),
+            "{card:?} should be permitted"
+        );
+    }
+    assert!(!offered_to(&runner, P0, noncreature));
+    assert_cast_rejected(&mut runner, noncreature);
+
+    runner.cast(castable).resolve();
+    assert_eq!(runner.state().objects[&castable].zone, Zone::Battlefield);
+    assert!(runner.state().stack.is_empty());
+    runner.cast(murder_a).target_object(castable).resolve();
+    assert_eq!(runner.state().objects[&castable].zone, Zone::Graveyard);
+    assert!(!offered_to(&runner, P0, castable));
+    assert_cast_rejected(&mut runner, castable);
+
+    runner.cast(murder_b).target_object(late).resolve();
+    assert_eq!(runner.state().objects[&late].zone, Zone::Graveyard);
+    assert!(!offered_to(&runner, P0, late));
+    assert_cast_rejected(&mut runner, late);
+    assert!(offered_to(&runner, P0, expires_a));
+    assert!(offered_to(&runner, P0, expires_b));
+
+    runner.advance_to_phase(Phase::End);
+    runner.advance_to_phase(Phase::Upkeep);
+    for card in [expires_a, expires_b] {
+        assert!(!offered_to(&runner, P0, card), "{card:?} should expire");
     }
 }
 

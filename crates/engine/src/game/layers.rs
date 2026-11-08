@@ -253,6 +253,21 @@ fn effect_candidate_ids(
     candidates
 }
 
+/// CR 400.1 + CR 611.2c: resolving GenericEffects freeze their matching
+/// recipients at resolution, using the same zone-aware candidate set as layers.
+pub(crate) fn generic_effect_candidate_ids(
+    state: &GameState,
+    filter: &TargetFilter,
+    source_id: ObjectId,
+) -> Vec<ObjectId> {
+    effect_candidate_ids(
+        state,
+        filter,
+        source_id,
+        &mut LayerZoneObjectCache::default(),
+    )
+}
+
 struct PreparedIncrementalFlush {
     recipient_ids: BTreeSet<ObjectId>,
     active_effects: Vec<ActiveContinuousEffect>,
@@ -12581,6 +12596,16 @@ fn apply_continuous_effect_filtered(
                 let resolved_mode = resolve_static_mode_chosen_color(mode, chosen_color);
                 let mut def =
                     StaticDefinition::new(resolved_mode.clone()).affected(TargetFilter::SelfRef);
+                // CR 113.6b: a granted cast permission functions from the zone it names.
+                match &resolved_mode {
+                    StaticMode::GraveyardCastPermission { .. } => {
+                        def = def.active_zones(vec![crate::types::zones::Zone::Graveyard]);
+                    }
+                    StaticMode::ExileCastPermission { .. } => {
+                        def = def.active_zones(vec![crate::types::zones::Zone::Exile]);
+                    }
+                    _ => {}
+                }
                 // CR 611.2c + CR 109.5: A player reference carried by the granted
                 // mode — a controller-relative blocker filter ("your opponents")
                 // or `MustAttackAwayFromSource`'s avoided player (CR 701.15b) —
