@@ -26973,6 +26973,20 @@ fn explicit_any_target_clause(effect: &Effect, lower: &str) -> bool {
         && nom_primitives::scan_contains(lower, "any target")
 }
 
+fn explicit_typed_target_clause(effect: &Effect, lower: &str) -> bool {
+    effect
+        .target_filter()
+        .is_some_and(target_filter_has_explicit_object_constraints)
+        && nom_primitives::scan_at_word_boundaries(lower, |input| {
+            terminated(
+                tag::<_, _, OracleError<'_>>("target"),
+                not(satisfy(char::is_alphanumeric)),
+            )
+            .parse(input)
+        })
+        .is_some()
+}
+
 fn rewrite_triggering_spell_controller_to_parent_target_controller(effect: &mut Effect) {
     each_target_filter_mut(effect, &mut |filter| {
         if matches!(filter, TargetFilter::TriggeringSpellController) {
@@ -49253,7 +49267,7 @@ fn parse_effect_chain_ir_body(
                 )
             }
         };
-        let (clause, multi_target) = lift_untargeted_declared_slot_destroy(
+        let (clause, mut multi_target) = lift_untargeted_declared_slot_destroy(
             clause,
             multi_target,
             &text_no_qty.to_ascii_lowercase(),
@@ -49652,6 +49666,11 @@ fn parse_effect_chain_ir_body(
         // chunks. The deeper links are never visited by these rewriters anyway,
         // which is exactly why a head-only rewrite corrupts the chain.
         let is_distributed_chunk = text_is_compound_subject_distribution(&text);
+        // CR 115.1d + CR 608.2c: the clause's own explicit typed target is the
+        // object set that a compound anaphoric rider refers to. Do not rebind
+        // that declared set to an earlier parent target.
+        let clause_announces_typed_target =
+            explicit_typed_target_clause(&clause.effect, &recipient_anaphor_lower);
         // Kicker clauses referencing "that creature"/"it" inherit the parent's target.
         // CR 608.2c: its `!builder.is_empty()` gate is intentionally broad
         // (many antecedent shapes reach this without a `target_filter()`, e.g. a typed
@@ -49679,6 +49698,7 @@ fn parse_effect_chain_ir_body(
             && has_anaphoric_reference(&recipient_anaphor_lower)
             && !matches!(if_you_do_anchor, Some(TargetFilter::SelfRef))
             && !typed_trigger_subject
+            && !clause_announces_typed_target
             && !explicit_any_target_clause(&clause.effect, &text_lower)
             && !replace_fight_subject_with_parent_if_anaphoric_subject(
                 &text_lower,
@@ -49758,6 +49778,7 @@ fn parse_effect_chain_ir_body(
             })
             && has_anaphoric_reference(&recipient_anaphor_lower)
             && !typed_trigger_subject
+            && !clause_announces_typed_target
             && !explicit_any_target_clause(&clause.effect, &text_lower)
             && !replace_fight_subject_with_parent_if_anaphoric_subject(
                 &text_lower,
@@ -49790,6 +49811,7 @@ fn parse_effect_chain_ir_body(
             && chain_has_prior_typed_referent(builder.clauses(), false)
             && has_anaphoric_reference(&recipient_anaphor_lower)
             && !typed_trigger_subject
+            && !clause_announces_typed_target
             && !explicit_any_target_clause(&clause.effect, &text_lower)
             && !replace_fight_subject_with_parent_if_anaphoric_subject(
                 &text_lower,
@@ -51044,7 +51066,6 @@ fn parse_effect_chain_ir_body(
                 condition.as_ref(),
                 zone_change_head,
                 &clause.effect,
-                &text_lower,
                 player_scope.as_ref(),
                 builder.clauses(),
             ) {
@@ -51070,6 +51091,36 @@ fn parse_effect_chain_ir_body(
                     chunk.boundary_after,
                 );
                 continue 'chunks;
+            }
+
+            // CR 603.12 + CR 608.2c: a filtered discard reflexive counts only
+            // the discarded members named by its "this way" gate, not every
+            // card in a wider discard instruction (Seasoned Cryomancer).
+            let filtered_discard_count = condition
+                .as_ref()
+                .and_then(AbilityCondition::zone_changed_this_way_head)
+                .and_then(|gate| match gate {
+                    AbilityCondition::ZoneChangedThisWay { filter, .. }
+                        if !matches!(filter, TargetFilter::Any)
+                            && zone_change_head.is_some_and(|head| {
+                                matches!(
+                                    head.verb,
+                                    super::oracle_nom::condition::ThisWayVerb::Discard
+                                )
+                            }) =>
+                    {
+                        Some(crate::types::ability::QuantityRef::FilteredTrackedSetSize {
+                            filter: Box::new(filter.clone()),
+                            caused_by: Some(crate::types::ability::ThisWayCause::Discarded),
+                        })
+                    }
+                    _ => None,
+                });
+            if let (Some(spec), Some(count)) = (multi_target.as_mut(), filtered_discard_count) {
+                spec.min.rebind_event_context_amount(&count);
+                if let Some(max) = spec.max.as_mut() {
+                    max.rebind_event_context_amount(&count);
+                }
             }
 
             let clause_declared_group = chunk_ctx.clause_declared_group.take();

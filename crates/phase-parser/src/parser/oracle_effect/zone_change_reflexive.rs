@@ -11,12 +11,7 @@
 //! stack object carries. This module is the semantic boundary: per clause it
 //! decides whether both hold, and anything else fails closed.
 
-use nom::bytes::complete::tag;
-use nom::Parser;
-
 use super::super::oracle_nom::condition::{ThisWayHead, ThisWayOccurrence, ThisWayVerb};
-use super::super::oracle_nom::error::OracleError;
-use super::super::oracle_nom::primitives as nom_primitives;
 use super::{has_typed_target_widened, ClauseDisposition, ClauseIr};
 use crate::types::ability::{AbilityCondition, Effect, PlayerFilter, QuantityExpr, TargetFilter};
 use crate::types::zones::Zone;
@@ -180,14 +175,13 @@ fn grants_play_permission(effect: &Effect) -> bool {
 ///   creating resolution instead of as its own stack object.
 /// * `zone_change_reflexive_unbound_referent` — the body names an object the
 ///   reflexive stack object cannot carry: a bare `ParentTarget` operand (its
-///   target, or a fight's subject) while no earlier instruction announced a
-///   target for it to inherit or while the body itself says "target"; or a
+///   target, or a fight's subject) when neither the producing instruction nor
+///   an earlier instruction in the reflexive body announced a target; or a
 ///   copy with no copy source.
 pub(super) fn unsupported_zone_change_reflexive(
     condition: Option<&AbilityCondition>,
     head: Option<ThisWayHead>,
     effect: &Effect,
-    body_lower: &str,
     body_player_scope: Option<&PlayerFilter>,
     clauses: &[ClauseIr],
 ) -> Option<&'static str> {
@@ -216,11 +210,17 @@ pub(super) fn unsupported_zone_change_reflexive(
     if body_player_scope.is_some() {
         return Some("zone_change_reflexive_scoped_body");
     }
-    let body_names_a_target = nom_primitives::scan_at_word_boundaries(body_lower, |input| {
-        tag::<_, _, OracleError<'_>>("target ").parse(input)
-    })
-    .is_some();
     let parent_announced_a_target = has_typed_target_widened(&producer.parsed.effect);
+    let body_announced_a_target = has_typed_target_widened(effect)
+        || clauses
+            .iter()
+            .position(|clause| std::ptr::eq(clause, producer))
+            .is_some_and(|producer_index| {
+                clauses
+                    .iter()
+                    .skip(producer_index + 1)
+                    .any(|clause| has_typed_target_widened(&clause.parsed.effect))
+            });
     // The body's object operands: its target, plus the fighting creature of a
     // fight ("it fights ~").
     let fight_subject = match effect {
@@ -232,7 +232,10 @@ pub(super) fn unsupported_zone_change_reflexive(
         .into_iter()
         .chain(fight_subject)
         .any(|operand| matches!(operand, TargetFilter::ParentTarget));
-    if reads_parent_target && (body_names_a_target || !parent_announced_a_target) {
+    // CR 603.12 + CR 603.3d: a target announced by an earlier instruction in
+    // the reflexive body belongs to that triggered ability, not its creator.
+    // Later body instructions may therefore refer to its target set.
+    if reads_parent_target && !parent_announced_a_target && !body_announced_a_target {
         return Some("zone_change_reflexive_unbound_referent");
     }
     // A copy whose source lost its referent ("a token that's a copy of that

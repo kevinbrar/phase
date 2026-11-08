@@ -227,6 +227,7 @@ mod reviving_vapors_hand_and_rest;
 mod ring_equipped_creature_color_condition;
 mod rules;
 mod screaming_nemesis_combat_damage_multi_trigger;
+mod seasoned_cryomancer;
 mod self_exile_cast_permission;
 mod seven_of_nine_differently_named_lands;
 mod sliver_static_grants;

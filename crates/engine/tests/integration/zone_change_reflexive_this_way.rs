@@ -1294,11 +1294,10 @@ fn reflexive_whose_event_is_not_the_preceding_instruction_fails_closed() {
     }
 }
 
-/// CR 603.3d: a reflexive created by a zone change has no announced parent
-/// target, so a body whose recipient was rebound to the parent's target can
-/// never choose one. Not claimed.
+/// CR 115.1d + CR 603.3d: the reflexive body announces its own targets when it
+/// is put on the stack; a later "each of them" rider refers to that target set.
 #[test]
-fn reflexive_with_an_unbound_recipient_fails_closed() {
+fn reflexive_multi_target_body_keeps_its_announced_target_set() {
     let parsed = parse_oracle_text(
         "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them.",
         "Seasoned Cryomancer",
@@ -1311,9 +1310,9 @@ fn reflexive_with_an_unbound_recipient_fails_closed() {
         matches!(execute.effect.as_ref(), Effect::Draw { .. }),
         "reach guard: the printed ETB body"
     );
-    assert_eq!(
-        unimplemented_name(execute).as_deref(),
-        Some("zone_change_reflexive_unbound_referent")
+    assert!(
+        unimplemented_name(execute).is_none(),
+        "the ETB and reflexive target body must remain supported: {execute:?}"
     );
 }
 
