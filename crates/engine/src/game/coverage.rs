@@ -8321,20 +8321,21 @@ fn check_replacements(
     }
 }
 
-/// Build a lexicon of every subtype that appears on at least one printed
-/// card face. Used by [`check_subtype_lexicon`] to flag parser misfires:
-/// any `AddSubtype { subtype }` whose value isn't a real printed subtype
-/// (e.g. `"Gets"`, `"Until"`, `"+1/+1"`) signals that the animation or
-/// static-ability parser tokenized English filler words as subtypes.
-///
-/// The MTG Comprehensive Rules define valid subtypes (CR 205.3), but the
-/// printed corpus is the authoritative source for the engine — anything
-/// that has appeared on a real card's type line is valid.
+/// Build a lexicon of printed and canonical parser subtypes. Used by
+/// [`check_subtype_lexicon`] to flag parser misfires: any `AddSubtype { subtype }`
+/// outside these vocabularies (e.g. `"Gets"`, `"Until"`, `"+1/+1"`) signals
+/// that an animation or static parser tokenized English filler as a subtype.
 fn collect_valid_subtypes(card_db: &CardDatabase) -> HashSet<String> {
-    card_db
+    let mut subtypes: HashSet<String> = card_db
         .face_iter()
         .flat_map(|(_, face)| face.card_type.subtypes.iter().cloned())
-        .collect()
+        .collect();
+    subtypes.extend(
+        phase_ast::types::text_grammar::oracle_subtypes()
+            .iter()
+            .cloned(),
+    );
+    subtypes
 }
 
 /// Visit every `ContinuousModification` reachable from a card face.
@@ -18457,6 +18458,35 @@ mod tests {
         let mut missing = Vec::new();
         check_subtype_lexicon(&face, &valid, &mut missing);
 
+        assert!(missing.is_empty());
+    }
+
+    /// CR 205.3m: a valid creature subtype used only by an animation must not be
+    /// rejected merely because it is absent from printed card type lines.
+    #[test]
+    fn subtype_lexicon_accepts_registered_creature_subtypes_without_printed_types() {
+        let valid = collect_valid_subtypes(&CardDatabase::default());
+        assert!(valid.contains("Llama"));
+
+        let mut face = CardFace {
+            name: "Restless Prairie".into(),
+            ..Default::default()
+        };
+        face.abilities.push(AbilityDefinition::new(
+            AbilityKind::Activated,
+            Effect::GenericEffect {
+                static_abilities: vec![StaticDefinition::continuous().modifications(vec![
+                    ContinuousModification::AddSubtype {
+                        subtype: "Llama".into(),
+                    },
+                ])],
+                duration: None,
+                target: None,
+                end_cost: None,
+            },
+        ));
+        let mut missing = Vec::new();
+        check_subtype_lexicon(&face, &valid, &mut missing);
         assert!(missing.is_empty());
     }
 
