@@ -3569,6 +3569,7 @@ fn try_parse_die_exile_rider(lower: &str, kind: AbilityKind) -> Option<AbilityDe
         .ok()?;
     let (rest, _) = alt((
         tag::<_, _, OracleError<'_>>("that creature or planeswalker"),
+        tag("that permanent"),
         tag("that creature"),
         tag("that planeswalker"),
         tag("that token"),

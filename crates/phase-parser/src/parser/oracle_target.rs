@@ -3239,6 +3239,13 @@ fn parse_type_phrase_folding_unbound<'a>(
     ctx: &mut ParseContext,
 ) -> (TargetFilter, &'a str) {
     let lower = text.to_lowercase();
+    if let Some(parsed) = nom_on_lower(text, &lower, |input| {
+        parse_color_type_disjunction(input, ctx)
+            .map(|(filter, rest)| Ok((rest, filter)))
+            .unwrap_or_else(|| Err(oracle_err(input)))
+    }) {
+        return parsed;
+    }
     let mut pos = 0;
     let mut properties = Vec::new();
     let mut property_disjunction_ranges: Vec<(usize, usize)> = Vec::new();
@@ -5655,6 +5662,42 @@ fn parse_color_or_type_union(
     });
     let combined = distribute_shared_properties(combined, &shared);
     Some(distribute_properties_to_or(combined))
+}
+
+/// CR 105.2 + CR 205.2a: "black or green creature or planeswalker" is the
+/// conjunction of a color disjunction and a type disjunction, not a union of
+/// one unconstrained black object with green permanents. Parse the independent
+/// color phrase first, then distribute its shared color predicate across the
+/// ordinary type-phrase parser's branches.
+fn parse_color_type_disjunction<'a>(
+    text: &'a str,
+    ctx: &mut ParseContext,
+) -> Option<(TargetFilter, &'a str)> {
+    let (after_colors, colors) = parse_color_disjunction(text).ok()?;
+    if colors.len() < 2 {
+        return None;
+    }
+    let (after_space, _) = nom::character::complete::space1::<_, OracleError<'_>>
+        .parse(after_colors)
+        .ok()?;
+    let (types, rest) = parse_type_phrase_folding_unbound(after_space, ctx);
+    let TargetFilter::Or { filters } = &types else {
+        return None;
+    };
+    if filters.len() < 2
+        || !filters.iter().all(
+            |filter| matches!(filter, TargetFilter::Typed(typed) if !typed.type_filters.is_empty()),
+        )
+    {
+        return None;
+    }
+    let color_properties = [FilterProp::AnyOf {
+        props: colors
+            .into_iter()
+            .map(|color| FilterProp::HasColor { color })
+            .collect(),
+    }];
+    Some((distribute_shared_properties(types, &color_properties), rest))
 }
 
 /// CR 609.7 + CR 702.72a: Read a reader's whole "X or Y" qualifier ("red or
@@ -14382,6 +14425,28 @@ mod tests {
                 count: 0,
             }
         )));
+    }
+
+    #[test]
+    fn color_disjunction_distributes_over_type_disjunction() {
+        let (filter, rest) = parse_type_phrase_folding("black or green creature or planeswalker");
+        assert!(rest.trim().is_empty(), "remainder: '{rest}'");
+        let TargetFilter::Or { filters } = filter else {
+            panic!("expected a type disjunction");
+        };
+        assert_eq!(filters.len(), 2);
+        for filter in filters {
+            let TargetFilter::Typed(typed) = filter else {
+                panic!("expected typed branch");
+            };
+            assert!(!typed.type_filters.is_empty());
+            assert!(typed.properties.iter().any(|property| matches!(
+                property,
+                FilterProp::AnyOf { props }
+                    if props.contains(&FilterProp::HasColor { color: ManaColor::Black })
+                        && props.contains(&FilterProp::HasColor { color: ManaColor::Green })
+            )));
+        }
     }
 
     #[test]

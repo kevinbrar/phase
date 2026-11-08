@@ -29157,6 +29157,27 @@ fn conditional_cant_be_regenerated_carbonize() {
     );
 }
 
+#[test]
+fn essence_burn_parses_its_target_permanent_die_exile_rider() {
+    let def = parse_effect_chain(
+        "Essence Burn deals 5 damage to target black or green creature or planeswalker. If that permanent would die this turn, exile it instead.",
+        AbilityKind::Spell,
+    );
+    assert!(
+        matches!(&*def.effect, Effect::DealDamage { .. }),
+        "root must be DealDamage, got {:?}",
+        def.effect
+    );
+    assert!(
+        chain_has_add_target_replacement(&def),
+        "expected the die-exile rider to lower to AddTargetReplacement: {def:?}"
+    );
+    assert!(
+        !chain_has_unimplemented(&def),
+        "no unimplemented clause may remain: {def:?}"
+    );
+}
+
 /// Issue #3343: boundary-split proof — the second sentence (one chunk under
 /// `starts_prefix_clause`) must split into BOTH riders, and the exile clause
 /// must be an AddTargetReplacement, NOT a degenerate `ChangeZone { Exile }`
