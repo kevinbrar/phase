@@ -26388,9 +26388,13 @@ mod ability_triggered_attack_trigger_tests {
         );
         let execute = trigger.execute.expect("trigger body must be parsed");
         let body = format!("{execute:?}");
+        // allow-noncombinator: AST debug-shape assertion, not parser dispatch.
         assert!(!body.contains("Unimplemented"), "{body}");
+        // allow-noncombinator: AST debug-shape assertion, not parser dispatch.
         assert!(body.contains("CopySpell"), "{body}");
+        // allow-noncombinator: AST debug-shape assertion, not parser dispatch.
         assert!(body.contains("ParentTarget"), "{body}");
+        // allow-noncombinator: AST debug-shape assertion, not parser dispatch.
         assert!(body.contains("MayChooseNewTargets"), "{body}");
     }
 }
