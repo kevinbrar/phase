@@ -4,9 +4,9 @@
 use super::prelude::*;
 #[allow(unused_imports)]
 use super::support::*;
-use crate::parser::oracle_util::GRANTING_SELF_PLACEHOLDER;
+use nom::bytes::complete::take_until;
 use nom::character::complete::multispace0;
-use nom::sequence::{pair, preceded};
+use nom::sequence::{preceded, terminated};
 
 /// Parse self power/toughness equality, using ordinary setters for gated
 /// abilities and characteristic-defining setters for unconditional abilities:
@@ -58,7 +58,7 @@ pub(crate) fn parse_cda_pt_equality(lower: &str, text: &str) -> Option<StaticDef
     let condition = super::evasion::combine_conditions(timing_condition, gate_condition);
     let body_lower = body.to_lowercase();
     let lower = body_lower.as_str();
-    let affected = cda_pt_equality_affected(lower);
+    let affected = cda_pt_equality_affected(lower)?;
 
     // Detect framing
     let both = nom_primitives::scan_contains(lower, "power and toughness are each equal to");
@@ -179,20 +179,23 @@ pub(crate) fn parse_cda_pt_equality(lower: &str, text: &str) -> Option<StaticDef
     Some(def)
 }
 
-fn cda_pt_equality_affected(lower: &str) -> TargetFilter {
+fn cda_pt_equality_affected(lower: &str) -> Option<TargetFilter> {
     preceded(
         multispace0,
-        value(
-            TargetFilter::GrantingObject { bound: None },
-            pair(
-                tag::<_, _, OracleError<'_>>(GRANTING_SELF_PLACEHOLDER),
+        alt((
+            terminated(
+                crate::parser::oracle_nom::target::parse_self_reference,
                 tag::<_, _, OracleError<'_>>("'s "),
             ),
-        ),
+            value(
+                TargetFilter::SelfRef,
+                preceded(take_until("'s "), tag("'s ")),
+            ),
+        )),
     )
     .parse(lower)
+    .ok()
     .map(|(_, affected)| affected)
-    .unwrap_or(TargetFilter::SelfRef)
 }
 
 /// CR 208.2: Extract the `N` from a trailing "... its toughness is equal to that
