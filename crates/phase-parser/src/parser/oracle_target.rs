@@ -852,17 +852,21 @@ pub fn parse_target_with_syntax<'a>(
     }) {
         let target_end = text.len() - suffix_rest.len() - " of each card type".len();
         let filter_text = text["target ".len()..target_end].trim_end();
-        let (filter, _, _) = parse_target_with_syntax(filter_text, ctx);
-        ctx.target_phrase_multi_target = Some(MultiTargetSpec::fixed(0, 8));
-        if !ctx
-            .target_selection_constraints
-            .contains(&TargetSelectionConstraint::DistinctCardTypes)
-        {
-            ctx.target_selection_constraints
-                .push(TargetSelectionConstraint::DistinctCardTypes);
+        let mut filter_ctx = ctx.clone();
+        let (filter, filter_rest) = parse_type_phrase_folding_unbound(filter_text, &mut filter_ctx);
+        if filter_rest.is_empty() {
+            *ctx = filter_ctx;
+            ctx.target_phrase_multi_target = Some(MultiTargetSpec::fixed(0, 8));
+            if !ctx
+                .target_selection_constraints
+                .contains(&TargetSelectionConstraint::DistinctCardTypes)
+            {
+                ctx.target_selection_constraints
+                    .push(TargetSelectionConstraint::DistinctCardTypes);
+            }
+            syntax = TargetSyntax::TargetKeyword;
+            return (filter, suffix_rest, syntax);
         }
-        syntax = TargetSyntax::TargetKeyword;
-        return (filter, suffix_rest, syntax);
     }
 
     // CR 115.1 + CR 701.9b: Trailing " chosen at random" suffix on a noun-phrase
