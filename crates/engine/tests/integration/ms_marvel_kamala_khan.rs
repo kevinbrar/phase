@@ -79,6 +79,7 @@ fn ms_marvel_draws_and_sets_power_until_the_end_of_turn() {
         "the granted base-power static uses the controller's current hand size"
     );
 
+    // CR 514.2: "until end of turn" effects end during cleanup.
     advance_to_next_turn(&mut runner);
     runner.state_mut().layers_dirty.mark_full();
     evaluate_layers(runner.state_mut());
