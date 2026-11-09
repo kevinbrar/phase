@@ -36,6 +36,7 @@ mod blitz_em_dash_graveyard_cast;
 mod blizzard_brawl_snow_indestructible;
 mod board_wipe_co_departure_scaling;
 mod bring_to_light_free_cast_2880;
+mod bringer_of_the_last_gift;
 mod cartographers_hawk_relative_damage_recipient;
 mod case_solve_condition;
 mod cast_this_way_gate_8721;
