@@ -183,6 +183,7 @@ fn cda_pt_equality_affected(lower: &str) -> Option<TargetFilter> {
     preceded(
         multispace0,
         alt((
+            value(TargetFilter::SelfRef, tag::<_, _, OracleError<'_>>("its ")),
             terminated(
                 crate::parser::oracle_nom::target::parse_self_reference,
                 tag::<_, _, OracleError<'_>>("'s "),

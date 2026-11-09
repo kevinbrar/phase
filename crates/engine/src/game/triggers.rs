@@ -7401,10 +7401,19 @@ fn collect_pending_triggers_with_collection(
     // then clone matching pending triggers.
     apply_trigger_doubling(state, &mut pending);
 
-    // CR 603.2 + CR 508.1m + CR 508.3a: Each attack-caused trigger whose
-    // source is the declared attacker gets an identity before observers are
-    // collected. Reserve the same ObjectId that stack placement will use.
+    // CR 603.2 + CR 508.1m + CR 508.3a: Reserve stack identity for each
+    // attack-caused trigger whose source is the declared attacker, so observers
+    // can refer to that exact instance without changing allocation for other
+    // triggers.
     for trigger_context in &mut pending {
+        let Some(GameEvent::AttackersDeclared { attacker_ids, .. }) =
+            trigger_context.pending.trigger_event.as_ref()
+        else {
+            continue;
+        };
+        if !attacker_ids.contains(&trigger_context.pending.source_id) {
+            continue;
+        }
         let trigger_instance = ObjectId(state.next_object_id);
         state.next_object_id += 1;
         trigger_context.trigger_instance = Some(trigger_instance);
@@ -7476,11 +7485,6 @@ fn collect_pending_triggers_with_collection(
         }
     }
     apply_trigger_doubling(state, &mut ability_triggered_pending);
-    for trigger_context in &mut ability_triggered_pending {
-        let trigger_instance = ObjectId(state.next_object_id);
-        state.next_object_id += 1;
-        trigger_context.trigger_instance = Some(trigger_instance);
-    }
     pending.extend(ability_triggered_pending);
     pending = filter_auto_inert_noop_triggers(state, pending);
 
@@ -16169,12 +16173,6 @@ fn collect_pending_and_delayed_triggers_reporting_terminalized(
     } = collect_matching_delayed_triggers(state, delayed_events, delayed_scope);
     let mut contexts = normal_pending;
     contexts.extend(delayed_pending);
-    for context in &mut contexts {
-        if context.trigger_instance.is_none() {
-            context.trigger_instance = Some(ObjectId(state.next_object_id));
-            state.next_object_id += 1;
-        }
-    }
     contexts.sort_by_key(|ctx| {
         (
             trigger_apnap_rank(state, ctx.pending.controller),

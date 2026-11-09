@@ -42325,6 +42325,17 @@ fn static_gaeas_liege_full_oracle_dispatch() {
     );
     assert_eq!(parsed.statics.len(), 2, "{parsed:?}");
     assert_eq!(parsed.abilities.len(), 1, "{parsed:?}");
+    for definition in &parsed.statics {
+        assert_eq!(definition.modifications.len(), 2, "{definition:?}");
+        assert!(matches!(
+            definition.modifications[0],
+            ContinuousModification::SetPowerDynamic { .. }
+        ));
+        assert!(matches!(
+            definition.modifications[1],
+            ContinuousModification::SetToughnessDynamic { .. }
+        ));
+    }
     assert!(parsed
         .abilities
         .iter()
