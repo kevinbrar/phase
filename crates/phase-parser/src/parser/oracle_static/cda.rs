@@ -4,6 +4,9 @@
 use super::prelude::*;
 #[allow(unused_imports)]
 use super::support::*;
+use crate::parser::oracle_util::GRANTING_SELF_PLACEHOLDER;
+use nom::character::complete::multispace0;
+use nom::sequence::{pair, preceded};
 
 /// Parse self power/toughness equality, using ordinary setters for gated
 /// abilities and characteristic-defining setters for unconditional abilities:
@@ -55,6 +58,7 @@ pub(crate) fn parse_cda_pt_equality(lower: &str, text: &str) -> Option<StaticDef
     let condition = super::evasion::combine_conditions(timing_condition, gate_condition);
     let body_lower = body.to_lowercase();
     let lower = body_lower.as_str();
+    let affected = cda_pt_equality_affected(lower);
 
     // Detect framing
     let both = nom_primitives::scan_contains(lower, "power and toughness are each equal to");
@@ -80,7 +84,7 @@ pub(crate) fn parse_cda_pt_equality(lower: &str, text: &str) -> Option<StaticDef
             .collect();
         let value = digits.parse::<i32>().ok()?;
         let mut def = StaticDefinition::continuous()
-            .affected(TargetFilter::SelfRef)
+            .affected(affected.clone())
             .modifications(vec![
                 ContinuousModification::SetPower { value },
                 ContinuousModification::SetToughness { value },
@@ -164,7 +168,7 @@ pub(crate) fn parse_cda_pt_equality(lower: &str, text: &str) -> Option<StaticDef
     }
 
     let mut def = StaticDefinition::continuous()
-        .affected(TargetFilter::SelfRef)
+        .affected(affected)
         .modifications(modifications)
         .description(description.to_string());
     if let Some(cond) = condition {
@@ -173,6 +177,22 @@ pub(crate) fn parse_cda_pt_equality(lower: &str, text: &str) -> Option<StaticDef
         def = def.cda();
     }
     Some(def)
+}
+
+fn cda_pt_equality_affected(lower: &str) -> TargetFilter {
+    preceded(
+        multispace0,
+        value(
+            TargetFilter::GrantingObject { bound: None },
+            pair(
+                tag::<_, _, OracleError<'_>>(GRANTING_SELF_PLACEHOLDER),
+                tag::<_, _, OracleError<'_>>("'s "),
+            ),
+        ),
+    )
+    .parse(lower)
+    .map(|(_, affected)| affected)
+    .unwrap_or(TargetFilter::SelfRef)
 }
 
 /// CR 208.2: Extract the `N` from a trailing "... its toughness is equal to that

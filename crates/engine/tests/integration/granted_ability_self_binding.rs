@@ -929,13 +929,6 @@ fn self_grant_refused_name_demotes_its_grant() {
              deals damage equal to his power to any other target\" until end of turn.",
         ),
         (
-            MS_MARVEL,
-            "Ms. Marvel, Kamala Khan",
-            "Creature",
-            "Whenever you cast a spell that targets a creature you control, draw a card. Until \
-             end of turn, ~ gains \"~'s base power is equal to the number of cards in your hand.\"",
-        ),
-        (
             NECROMANCY,
             "Necromancy",
             "Enchantment",
@@ -1054,10 +1047,6 @@ and attach this enchantment to it. When this enchantment leaves the battlefield,
 controller sacrifices it.";
 const IRON_FIST: &str = "Whenever you cast a spell that targets a creature you control, Iron Fist \
 gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn.";
-const MS_MARVEL: &str = "Reach, vigilance\nYou have no maximum hand size.\nEmbiggen Fist \u{2014} \
-Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. \
-Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\"";
-
 /// CR 201.5a (last sentence: "This is also true if the second ability is copied
 /// onto a new object") + CR 707.2 — HOSTILE FIXTURE: granter == host, via
 /// copy-except.

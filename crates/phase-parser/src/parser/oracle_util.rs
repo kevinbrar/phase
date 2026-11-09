@@ -2784,12 +2784,14 @@ fn mask_name_occurrences_in_segment(
         // this occurrence is recoverable for the verb-object lookbehind.
         let abs_start = segment.len() - rest.len() + idx;
         let prefix_lower = segment[..abs_start].to_ascii_lowercase();
+        let is_characteristic_subject = is_possessive_characteristic_subject(&hay_rest[after..]);
         // CR 201.5a: mask only in an allowlisted position; the text before the
         // matched entry must end on a non-alphanumeric so `unattach ` never reads
         // as `attach `.
         let is_self_ref_object = before_ok
             && after_ok
-            && ends_in_position(&prefix_lower, GRANTER_SELF_REF_VERB_PREFIXES);
+            && (ends_in_position(&prefix_lower, GRANTER_SELF_REF_VERB_PREFIXES)
+                || is_characteristic_subject);
         if is_self_ref_object {
             out.push_str(&rest[..idx]);
             out.push_str(GRANTING_SELF_PLACEHOLDER);
@@ -2802,6 +2804,31 @@ fn mask_name_occurrences_in_segment(
     }
     out.push_str(rest);
     (out, refused)
+}
+
+fn is_possessive_characteristic_subject(after_name: &str) -> bool {
+    let Ok((rest, _)) = tag::<_, _, OracleError<'_>>("'s ").parse(after_name) else {
+        return false;
+    };
+    let Ok((rest, ())) = alt((
+        value((), tag::<_, _, OracleError<'_>>("base power and toughness")),
+        value((), tag::<_, _, OracleError<'_>>("power and toughness")),
+        value((), tag::<_, _, OracleError<'_>>("base power")),
+        value((), tag::<_, _, OracleError<'_>>("power")),
+        value((), tag::<_, _, OracleError<'_>>("base toughness")),
+        value((), tag::<_, _, OracleError<'_>>("toughness")),
+    ))
+    .parse(rest) else {
+        return false;
+    };
+    alt((
+        value((), tag::<_, _, OracleError<'_>>(" are each equal to ")),
+        value((), tag::<_, _, OracleError<'_>>(" each equal to ")),
+        value((), tag::<_, _, OracleError<'_>>(" is equal to ")),
+        value((), tag::<_, _, OracleError<'_>>(" becomes ")),
+    ))
+    .parse(rest)
+    .is_ok()
 }
 
 pub fn normalize_card_name_refs(text: &str, card_name: &str) -> String {
@@ -4011,6 +4038,21 @@ mod tests {
             normalized,
             format!(
                 "Creatures you control have \"Sacrifice {GRANTING_SELF_PLACEHOLDER}: Draw a card.\" Whenever ~ attacks, draw a card."
+            )
+        );
+    }
+
+    #[test]
+    fn normalize_quoted_possessive_characteristic_granter_reference() {
+        let (normalized, refused) = normalize_card_name_refs_reporting(
+            "Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\"",
+            "Ms. Marvel, Kamala Khan",
+        );
+        assert!(refused.is_empty());
+        assert_eq!(
+            normalized,
+            format!(
+                "Until end of turn, ~ gains \"{GRANTING_SELF_PLACEHOLDER}'s base power is equal to the number of cards in your hand.\""
             )
         );
     }
