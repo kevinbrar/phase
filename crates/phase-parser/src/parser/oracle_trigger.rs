@@ -857,6 +857,7 @@ fn cost_x_sibling_slot_still_unbound(def: &crate::types::ability::AbilityDefinit
             // one must be handled here or the build breaks — it cannot silently fabricate.
             TargetSelectionConstraint::DifferentTargetPlayers
             | TargetSelectionConstraint::DifferentObjectControllers
+            | TargetSelectionConstraint::DistinctCardTypes
             | TargetSelectionConstraint::SameZoneOwner { .. } => {}
         }
     }
@@ -7901,6 +7902,28 @@ fn parse_cast_from_zone_intervening_if(input: &str) -> OracleResult<'_, TriggerC
     Ok((rest, scoped_you_cast_from_zone(zone)))
 }
 
+/// CR 603.4 + CR 601.2: unzoned cast check for a permanent's intervening-if.
+fn parse_you_cast_source_intervening_if(input: &str) -> OracleResult<'_, TriggerCondition> {
+    let (rest, _) = tag("if you cast ").parse(input)?;
+    let (rest, _) = alt((
+        tag("this creature"),
+        tag("this card"),
+        tag("this spell"),
+        tag("it"),
+        tag("him"),
+        tag("her"),
+    ))
+    .parse(rest)?;
+    Ok((
+        rest,
+        TriggerCondition::WasCast {
+            zone: None,
+            controller: None,
+            owner: None,
+        },
+    ))
+}
+
 /// CR 603.4 + CR 601.2: Parse "if you cast it/them [from <zone>] and
 /// <game-state condition>" as a cast-provenance AND a second conjunct. The
 /// game-state side is delegated to `parse_inner_condition` and bridged through
@@ -8273,20 +8296,16 @@ fn extract_if_condition_with_card_name(
         return IfExtraction::hoisted(strip_condition_clause(text, pos, clause_len), condition);
     }
 
-    // CR 701.57a: "if you cast it" — zoneless cast check (Discover ETBs).
-    // Guard: must not be followed by " from" (zone-specific variant).
-    if let Some(pos) = tp.find("if you cast it") {
-        let after = &lower[pos + "if you cast it".len()..];
-        if !after.starts_with(" from") {
-            return IfExtraction::hoisted(
-                strip_condition_clause(text, pos, "if you cast it".len()),
-                TriggerCondition::WasCast {
-                    zone: None,
-                    controller: None,
-                    owner: None,
-                },
-            );
-        }
+    // CR 603.4 + CR 601.2: zoneless cast check. The zone-specific and
+    // conjunction forms above own their longer prefixes before this scan.
+    if let Some((before, condition, rest)) =
+        scan_preceded(&lower, parse_you_cast_source_intervening_if)
+    {
+        let clause_len = lower.len() - before.len() - rest.len();
+        return IfExtraction::hoisted(
+            strip_condition_clause(text, before.len(), clause_len),
+            condition,
+        );
     }
 
     // CR 603.4 + CR 601.2 + CR 603.2c: disjunctive

@@ -19174,6 +19174,7 @@ fn target_choice_positions_read_created_referent(
             } => has_quantity(value),
             TargetSelectionConstraint::DifferentTargetPlayers
             | TargetSelectionConstraint::DifferentObjectControllers
+            | TargetSelectionConstraint::DistinctCardTypes
             | TargetSelectionConstraint::SameZoneOwner { zone: _ } => false,
         });
     let modal_reads = modal.is_some_and(

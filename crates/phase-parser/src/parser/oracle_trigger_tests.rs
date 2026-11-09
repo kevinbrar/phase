@@ -8935,6 +8935,24 @@ fn extract_if_condition_cast_from_hand() {
     );
 }
 
+#[test]
+fn extract_if_condition_cast_the_source_with_personal_pronoun() {
+    let (cleaned, condition) =
+        extract_if_condition("if you cast him, exile up to one target nonland card of each card type from your graveyard.");
+    assert!(matches!(
+        condition,
+        Some(TriggerCondition::WasCast {
+            zone: None,
+            controller: None,
+            owner: None,
+        })
+    ));
+    assert_eq!(
+        cleaned,
+        "exile up to one target nonland card of each card type from your graveyard"
+    );
+}
+
 /// CR 601.2 + CR 404.1: "if you cast it from exile" scopes the CASTER axis
 /// to you but leaves the ORIGIN-ZONE-OWNER unscoped — exile is a shared
 /// zone ("from exile" has no possessive), unlike hand/graveyard.

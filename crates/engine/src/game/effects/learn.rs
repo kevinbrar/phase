@@ -60,6 +60,8 @@ pub(crate) fn lesson_search_ability(source_id: ObjectId, controller: PlayerId) -
             reveal: true,
             destination: Zone::Hand,
             source_pool: OutsideGameSourcePool::Sideboard,
+            selection_mode:
+                crate::types::ability::OutsideGameSelectionMode::ControllerTakesSelected,
         },
         vec![],
         source_id,

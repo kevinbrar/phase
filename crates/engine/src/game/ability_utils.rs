@@ -11339,6 +11339,27 @@ fn validate_target_constraints(
                     }
                 }
             }
+            TargetSelectionConstraint::DistinctCardTypes => {
+                let Some(state) = state else {
+                    continue;
+                };
+                let mut seen = std::collections::HashSet::new();
+                for target in targets {
+                    let TargetRef::Object(object_id) = target else {
+                        continue;
+                    };
+                    let object = state.objects.get(object_id).ok_or_else(|| {
+                        EngineError::InvalidAction("Selected object target is missing".into())
+                    })?;
+                    for card_type in &object.card_types.core_types {
+                        if !seen.insert(*card_type) {
+                            return Err(EngineError::InvalidAction(
+                                "Selected object targets must have different card types".into(),
+                            ));
+                        }
+                    }
+                }
+            }
             TargetSelectionConstraint::SameZoneOwner { zone } => {
                 let Some(state) = state else {
                     continue;

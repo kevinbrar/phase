@@ -984,6 +984,19 @@ pub enum OutsideGameSourcePool {
     SideboardAndFaceUpExile,
 }
 
+/// CR 608.2d + CR 400.11: What happens after the controller selects cards
+/// from outside the game.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum OutsideGameSelectionMode {
+    /// The controller takes the selected cards to the stated destination.
+    #[default]
+    ControllerTakesSelected,
+    /// The controller reveals exactly two differently named cards; an
+    /// opponent chooses one to be brought into the game.
+    OpponentChoosesOne,
+}
+
 impl OutsideGameSourcePool {
     pub fn includes_face_up_exile(self) -> bool {
         matches!(self, OutsideGameSourcePool::SideboardAndFaceUpExile)
@@ -23050,6 +23063,10 @@ pub enum Effect {
         /// upper bound, never a forced count.
         #[serde(default)]
         count: Option<QuantityExpr>,
+        /// CR 202.3 + CR 707.12a: Additional legality constraint on the set of
+        /// copies the player elects to cast, such as a combined mana-value cap.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selection_constraint: Option<ChooseFromZoneConstraint>,
     },
     /// CR 707.2 / CR 707.5: Create a token that's a copy of a permanent.
     /// Copies copiable characteristics (name, mana cost, color, types, P/T, abilities, keywords)
@@ -23755,6 +23772,8 @@ pub enum Effect {
         destination: Zone,
         #[serde(default, skip_serializing_if = "is_default_outside_game_source_pool")]
         source_pool: OutsideGameSourcePool,
+        #[serde(default, skip_serializing_if = "is_controller_takes_selected")]
+        selection_mode: OutsideGameSelectionMode,
     },
     /// CR 400.11 + CR 400.11b + CR 701.20: Open a sealed Magic booster pack —
     /// a set of cards from OUTSIDE the game — reveal them, and bring `count` of
@@ -28400,6 +28419,10 @@ fn is_default_search_selection_constraint(c: &SearchSelectionConstraint) -> bool
 
 fn is_default_outside_game_source_pool(pool: &OutsideGameSourcePool) -> bool {
     matches!(pool, OutsideGameSourcePool::Sideboard)
+}
+
+fn is_controller_takes_selected(mode: &OutsideGameSelectionMode) -> bool {
+    matches!(mode, OutsideGameSelectionMode::ControllerTakesSelected)
 }
 
 /// CR 701.23a: Default search zone set — library only, the overwhelming

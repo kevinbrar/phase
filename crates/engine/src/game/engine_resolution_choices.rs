@@ -16,8 +16,9 @@ use crate::types::events::GameEvent;
 use crate::types::game_state::{
     ActionResult, BatchCompletion, CastOfferKind, ChosenDamageSource, ContinuationXAnnouncement,
     CopyChosenSelection, CostResume, GameState, ManaAmountComposition, OutsideGameChoiceSource,
-    PayCostKind, PayableResource, PendingContinuation, PendingPlayerScopeSacrificeCompletion,
-    PersistentAxisMaterialization, WaitingFor, ZoneOpponentChooserPurpose,
+    OutsideGameChoiceStage, PayCostKind, PayableResource, PendingContinuation,
+    PendingPlayerScopeSacrificeCompletion, PersistentAxisMaterialization, WaitingFor,
+    ZoneOpponentChooserPurpose,
 };
 use crate::types::identifiers::ObjectId;
 use crate::types::resolved_commands::{
@@ -5717,9 +5718,19 @@ pub(super) fn handle_resolution_choice(
                 reveal,
                 up_to,
                 destination,
+                stage,
+                ..
             },
             GameAction::ChooseOutsideGameCards { selections },
         ) => {
+            if matches!(
+                stage,
+                OutsideGameChoiceStage::ControllerChoosesOpponent { .. }
+            ) {
+                return Err(EngineError::InvalidAction(
+                    "Must choose an opponent for the revealed outside-game pair".to_string(),
+                ));
+            }
             let valid = if up_to {
                 selections.len() <= count
             } else {
@@ -5806,6 +5817,76 @@ pub(super) fn handle_resolution_choice(
                 }
             }
 
+            if stage == OutsideGameChoiceStage::RevealPairThenOpponentSelects {
+                let selected_choices = selections
+                    .iter()
+                    .filter_map(|selection| {
+                        choices
+                            .iter()
+                            .find(|choice| match (&choice.source, selection) {
+                                (
+                                    OutsideGameChoiceSource::Sideboard {
+                                        sideboard_index: offered,
+                                        ..
+                                    },
+                                    OutsideGameSelection::Sideboard {
+                                        sideboard_index: selected,
+                                    },
+                                ) => offered == selected,
+                                _ => false,
+                            })
+                            .cloned()
+                    })
+                    .collect::<Vec<_>>();
+                let distinct_names = selected_choices
+                    .iter()
+                    .map(|choice| choice.name.as_str())
+                    .collect::<HashSet<_>>();
+                if selected_choices.len() != 2 || distinct_names.len() != 2 {
+                    return Err(EngineError::InvalidAction(
+                        "Must reveal two outside-game cards with different names".to_string(),
+                    ));
+                }
+                let candidates = crate::game::players::choosable_opponents(state, player);
+                if candidates.is_empty() {
+                    return Ok(ResolutionChoiceOutcome::WaitingFor(
+                        finish_with_continuation(state, player, events),
+                    ));
+                }
+                let (chooser, next_stage, opponent_candidates) =
+                    if let [opponent] = candidates.as_slice() {
+                        (
+                            *opponent,
+                            OutsideGameChoiceStage::OpponentSelects { owner: player },
+                            Vec::new(),
+                        )
+                    } else {
+                        (
+                            player,
+                            OutsideGameChoiceStage::ControllerChoosesOpponent { owner: player },
+                            candidates,
+                        )
+                    };
+                state.waiting_for = WaitingFor::OutsideGameChoice {
+                    player: chooser,
+                    source_id,
+                    choices: selected_choices,
+                    count: 1,
+                    reveal: false,
+                    up_to: false,
+                    destination,
+                    stage: next_stage,
+                    opponent_candidates,
+                };
+                return Ok(action_result_outcome(events, state.waiting_for.clone()));
+            }
+
+            let recipient = match stage {
+                OutsideGameChoiceStage::OpponentSelects { owner } => owner,
+                OutsideGameChoiceStage::ControllerChoosesOpponent { owner } => owner,
+                OutsideGameChoiceStage::ControllerSelects
+                | OutsideGameChoiceStage::RevealPairThenOpponentSelects => player,
+            };
             let mut chosen_ids = Vec::new();
             for selection in selections {
                 match selection {
@@ -5813,7 +5894,7 @@ pub(super) fn handle_resolution_choice(
                         let object_id =
                             effects::search_outside_game::put_sideboard_entry_into_game(
                                 state,
-                                player,
+                                recipient,
                                 sideboard_index,
                                 destination,
                             )
@@ -5847,7 +5928,7 @@ pub(super) fn handle_resolution_choice(
                         // silently dropped card.
                         let object_id = effects::search_outside_game::put_outside_game_face_into(
                             state,
-                            player,
+                            recipient,
                             &card,
                             destination,
                         )
@@ -5866,7 +5947,7 @@ pub(super) fn handle_resolution_choice(
                             object_id,
                             destination,
                             source_id,
-                            player,
+                            recipient,
                             events,
                         )
                         .map_err(|error| EngineError::InvalidAction(format!("{error:?}")))?
@@ -5919,7 +6000,7 @@ pub(super) fn handle_resolution_choice(
                     chosen_ids.iter().map(|&id| TargetRef::Object(id)).collect(),
                 );
             }
-            ResolutionChoiceOutcome::WaitingFor(finish_with_continuation(state, player, events))
+            ResolutionChoiceOutcome::WaitingFor(finish_with_continuation(state, recipient, events))
         }
         (
             WaitingFor::ChooseFromZoneChoice {
@@ -9205,6 +9286,36 @@ pub(super) fn handle_resolution_choice(
                 }
                 ResolutionChoiceOutcome::WaitingFor(state.waiting_for.clone())
             }
+        }
+        (
+            WaitingFor::OutsideGameChoice {
+                player: _,
+                source_id,
+                choices,
+                destination,
+                stage: OutsideGameChoiceStage::ControllerChoosesOpponent { owner },
+                opponent_candidates,
+                ..
+            },
+            GameAction::ChooseZoneOpponentChooser { opponent },
+        ) => {
+            if !opponent_candidates.contains(&opponent) {
+                return Err(EngineError::InvalidAction(format!(
+                    "Chosen outside-game opponent {opponent:?} is not a legal candidate"
+                )));
+            }
+            state.waiting_for = WaitingFor::OutsideGameChoice {
+                player: opponent,
+                source_id,
+                choices,
+                count: 1,
+                reveal: false,
+                up_to: false,
+                destination,
+                stage: OutsideGameChoiceStage::OpponentSelects { owner },
+                opponent_candidates: Vec::new(),
+            };
+            ResolutionChoiceOutcome::WaitingFor(state.waiting_for.clone())
         }
         // CR 101.4 + CR 707.2 + CR 122.1: One player submitted their ordered
         // 1..=max selection for `EachPlayerCopyChosen`. Collect APNAP choices

@@ -4,15 +4,19 @@ use crate::game::printed_cards::apply_card_face_to_object;
 use crate::game::quantity::resolve_quantity_with_targets;
 use crate::game::zones;
 use crate::types::ability::TargetFilter;
-use crate::types::ability::{Effect, EffectError, EffectKind, ResolvedAbility};
+use crate::types::ability::{
+    Effect, EffectError, EffectKind, OutsideGameSelectionMode, ResolvedAbility,
+};
 use crate::types::card_printing::DeckSection;
 use crate::types::events::GameEvent;
 use crate::types::game_state::{
-    GameState, OutsideGameCardUse, OutsideGameChoiceEntry, OutsideGameChoiceSource, WaitingFor,
+    GameState, OutsideGameCardUse, OutsideGameChoiceEntry, OutsideGameChoiceSource,
+    OutsideGameChoiceStage, WaitingFor,
 };
 use crate::types::identifiers::{CardId, ObjectId};
 use crate::types::player::PlayerId;
 use crate::types::zones::Zone;
+use std::collections::HashSet;
 
 pub fn resolve(
     state: &mut GameState,
@@ -25,6 +29,7 @@ pub fn resolve(
         reveal,
         destination,
         source_pool,
+        selection_mode,
     } = &ability.effect
     else {
         return Ok(());
@@ -89,7 +94,24 @@ pub fn resolve(
         choices.extend(exile_candidates);
     }
 
+    if *selection_mode == OutsideGameSelectionMode::OpponentChoosesOne {
+        let mut seen_names = HashSet::new();
+        choices.retain(|choice| seen_names.insert(choice.name.clone()));
+        for choice in &mut choices {
+            choice.count = 1;
+        }
+    }
+
     if choices.is_empty() || count == 0 {
+        events.push(GameEvent::EffectResolved {
+            kind: EffectKind::SearchOutsideGame,
+            source_id: ability.source_id,
+            subject: None,
+        });
+        return Ok(());
+    }
+
+    if *selection_mode == OutsideGameSelectionMode::OpponentChoosesOne && choices.len() < count {
         events.push(GameEvent::EffectResolved {
             kind: EffectKind::SearchOutsideGame,
             source_id: ability.source_id,
@@ -102,11 +124,21 @@ pub fn resolve(
     state.waiting_for = WaitingFor::OutsideGameChoice {
         player: ability.controller,
         source_id: ability.source_id,
-        count: count.min(available_total),
+        count: if *selection_mode == OutsideGameSelectionMode::OpponentChoosesOne {
+            count
+        } else {
+            count.min(available_total)
+        },
         choices,
         reveal: *reveal,
-        up_to,
+        up_to: *selection_mode != OutsideGameSelectionMode::OpponentChoosesOne && up_to,
         destination: *destination,
+        stage: if *selection_mode == OutsideGameSelectionMode::OpponentChoosesOne {
+            OutsideGameChoiceStage::RevealPairThenOpponentSelects
+        } else {
+            OutsideGameChoiceStage::ControllerSelects
+        },
+        opponent_candidates: Vec::new(),
     };
     events.push(GameEvent::EffectResolved {
         kind: EffectKind::SearchOutsideGame,
@@ -398,6 +430,7 @@ mod tests {
                 reveal: true,
                 destination: Zone::Hand,
                 source_pool: OutsideGameSourcePool::Sideboard,
+                selection_mode: OutsideGameSelectionMode::ControllerTakesSelected,
             },
             vec![],
             source_id,
@@ -591,6 +624,8 @@ mod tests {
             reveal: true,
             up_to: false,
             destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerSelects,
+            opponent_candidates: Vec::new(),
         };
 
         let result = crate::game::apply_as_current(
@@ -617,6 +652,8 @@ mod tests {
             reveal: true,
             up_to: false,
             destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerSelects,
+            opponent_candidates: Vec::new(),
         };
 
         crate::game::apply_as_current(
@@ -654,6 +691,8 @@ mod tests {
             reveal: true,
             up_to: false,
             destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerSelects,
+            opponent_candidates: Vec::new(),
         };
 
         let result = crate::game::apply_as_current(
@@ -686,6 +725,8 @@ mod tests {
             reveal: true,
             up_to: false,
             destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerSelects,
+            opponent_candidates: Vec::new(),
         };
 
         let actions = crate::ai_support::legal_actions(&state);
@@ -696,6 +737,56 @@ mod tests {
                 selections
             } if selections.as_slice() == [OutsideGameSelection::Sideboard { sideboard_index: 0 }]
         )));
+    }
+
+    #[test]
+    fn controller_chooses_which_opponent_selects_the_revealed_pair() {
+        let mut state = state_with_sideboard(vec![
+            entry("Lightning Bolt", CoreType::Instant, 1),
+            entry("Shock", CoreType::Instant, 1),
+        ]);
+        let choices = state.deck_pools[0]
+            .current_sideboard
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| sideboard_choice(index, entry))
+            .collect();
+        state.waiting_for = WaitingFor::OutsideGameChoice {
+            player: PlayerId(0),
+            source_id: ObjectId(0),
+            choices,
+            count: 1,
+            reveal: false,
+            up_to: false,
+            destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerChoosesOpponent { owner: PlayerId(0) },
+            opponent_candidates: vec![PlayerId(1)],
+        };
+
+        let actions = crate::ai_support::legal_actions(&state);
+        assert!(actions.contains(&GameAction::ChooseZoneOpponentChooser {
+            opponent: PlayerId(1),
+        }));
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, GameAction::ChooseOutsideGameCards { .. })));
+
+        crate::game::apply_as_current(
+            &mut state,
+            GameAction::ChooseZoneOpponentChooser {
+                opponent: PlayerId(1),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(
+            state.waiting_for,
+            WaitingFor::OutsideGameChoice {
+                player: PlayerId(1),
+                stage: OutsideGameChoiceStage::OpponentSelects { owner: PlayerId(0) },
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -712,6 +803,8 @@ mod tests {
             reveal: true,
             up_to: false,
             destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerSelects,
+            opponent_candidates: Vec::new(),
         };
 
         let actions = crate::ai_support::legal_actions(&state);
@@ -767,6 +860,7 @@ mod tests {
                 reveal: true,
                 destination: Zone::Hand,
                 source_pool: OutsideGameSourcePool::SideboardAndFaceUpExile,
+                selection_mode: OutsideGameSelectionMode::ControllerTakesSelected,
             },
             vec![],
             source,
@@ -838,6 +932,7 @@ mod tests {
                 reveal: true,
                 destination: Zone::Hand,
                 source_pool: OutsideGameSourcePool::SideboardAndFaceUpExile,
+                selection_mode: OutsideGameSelectionMode::ControllerTakesSelected,
             },
             vec![],
             source,
@@ -880,6 +975,8 @@ mod tests {
             reveal: true,
             up_to: false,
             destination: Zone::Hand,
+            stage: OutsideGameChoiceStage::ControllerSelects,
+            opponent_candidates: Vec::new(),
         };
         state
             .outside_game_cards_brought_in
@@ -946,6 +1043,7 @@ mod tests {
                 reveal: true,
                 destination: Zone::Hand,
                 source_pool: OutsideGameSourcePool::Sideboard,
+                selection_mode: OutsideGameSelectionMode::ControllerTakesSelected,
             },
             vec![],
             source,

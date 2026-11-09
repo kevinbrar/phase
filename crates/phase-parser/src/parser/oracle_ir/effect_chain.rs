@@ -21,6 +21,7 @@ use crate::types::ability::{
     ReturnResultReadSpec, RoundingMode, SiblingCondition, SubAbilityLink, TargetChoiceTiming,
     TargetFilter, TargetReadOrigin, TargetSelectionMode, UnlessPayModifier,
 };
+use crate::types::game_state_kinds::TargetSelectionConstraint;
 use crate::types::keywords::Keyword;
 use crate::types::mana::ManaExpiry;
 use crate::types::zones::Zone;
@@ -947,6 +948,12 @@ pub(crate) struct ClauseIr {
     pub(crate) prefix_delayed_condition: Option<DelayedTriggerCondition>,
     /// CR 115.1d: Multi-target spec.
     pub(crate) multi_target: Option<MultiTargetSpec>,
+    /// CR 115.1d: Cardinality parsed from the target noun phrase.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_phrase_multi_target: Option<MultiTargetSpec>,
+    /// CR 115.3: Constraints parsed from the target noun phrase.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) target_selection_constraints: Vec<TargetSelectionConstraint>,
     /// CR 107.3i: "where X is <expr>" binding.
     pub(crate) where_x_expression: Option<String>,
     /// CR 608.2c + CR 115.1a: the players a controller anaphor inside
@@ -1090,6 +1097,8 @@ impl ClauseIr {
             delayed_condition,
             prefix_delayed_condition,
             multi_target,
+            target_phrase_multi_target,
+            target_selection_constraints,
             where_x_expression,
             where_x_player_antecedents,
             unless_pay,
@@ -1124,6 +1133,8 @@ impl ClauseIr {
         *delayed_condition = None;
         *prefix_delayed_condition = None;
         *multi_target = None;
+        *target_phrase_multi_target = None;
+        target_selection_constraints.clear();
         *where_x_expression = None;
         // The antecedents only ever qualify `where_x_expression`; with the
         // expression cleared they have nothing to bind and are reset with it.
@@ -1304,6 +1315,8 @@ impl ClauseIrBuilder {
             delayed_condition: None,
             prefix_delayed_condition: None,
             multi_target: None,
+            target_phrase_multi_target: None,
+            target_selection_constraints: Vec::new(),
             where_x_expression: None,
             where_x_player_antecedents: PlayerAntecedents::default(),
             unless_pay: None,
@@ -1434,6 +1447,8 @@ pub(crate) struct ClauseDraft<'a> {
     delayed_condition: Option<DelayedTriggerCondition>,
     prefix_delayed_condition: Option<DelayedTriggerCondition>,
     multi_target: Option<MultiTargetSpec>,
+    target_phrase_multi_target: Option<MultiTargetSpec>,
+    target_selection_constraints: Vec<TargetSelectionConstraint>,
     where_x_expression: Option<String>,
     where_x_player_antecedents: PlayerAntecedents,
     unless_pay: Option<UnlessPayModifier>,
@@ -1488,6 +1503,17 @@ impl ClauseDraft<'_> {
     }
     pub(crate) fn multi_target(mut self, v: Option<MultiTargetSpec>) -> Self {
         self.multi_target = v;
+        self
+    }
+    pub(crate) fn target_phrase_multi_target(mut self, v: Option<MultiTargetSpec>) -> Self {
+        self.target_phrase_multi_target = v;
+        self
+    }
+    pub(crate) fn target_selection_constraints(
+        mut self,
+        v: Vec<TargetSelectionConstraint>,
+    ) -> Self {
+        self.target_selection_constraints = v;
         self
     }
     pub(crate) fn where_x_expression(mut self, v: Option<String>) -> Self {
@@ -1787,6 +1813,8 @@ impl ClauseDraft<'_> {
             delayed_condition: self.delayed_condition,
             prefix_delayed_condition: self.prefix_delayed_condition,
             multi_target: self.multi_target,
+            target_phrase_multi_target: self.target_phrase_multi_target,
+            target_selection_constraints: self.target_selection_constraints,
             where_x_expression: self.where_x_expression,
             where_x_player_antecedents: self.where_x_player_antecedents,
             unless_pay: self.unless_pay,

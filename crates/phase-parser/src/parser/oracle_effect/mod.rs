@@ -136,18 +136,18 @@ use crate::types::ability::{
     GameRestriction, GuardReading, GuessSubject, IntensityScope, IterationKindBinding,
     KeeperConstraint, KeeperCounterMark, LibraryPosition, ManaProduction, ManaSpendPermission,
     ManaTargetRole, MassLibraryShuffleMode, MultiTargetSpec, NameStickerSet, NumberDistinctness,
-    ObjectProperty, ObjectScope, OriginConstraint, PerPlayerScope, PerpetualModification,
-    PlayPermissionInvalidation, PlayerChoiceDistinctness, PlayerFilter, PlayerRelation,
-    PlayerScope, PreventionAmount, PreventionScope, ProhibitedActivity, PropertyAggregate, PtValue,
-    QuantityExpr, QuantityRef, ReciprocalZoneChoiceRole, ReplacementCondition,
-    ReplacementDefinition, ResolutionCastWindow, RestrictionExpiry, RestrictionPlayerScope,
-    RevealUntilDisposition, RoundingMode, SharedQuality, SharedQualityRelation, SiblingCondition,
-    SkipScope, SpellStackToGraveyardReplacement, StaticCondition, StaticDefinition, StepSkipTarget,
-    SubAbilityLink, TapStateChange, TargetFilter, TargetReadOrigin, TargetSelectionMode,
-    ThisWayCause, TokenAttackDestination, TrackedAnaphorSource, TriggerCondition,
-    TriggerDefinition, TurnGate, TypeFilter, TypedFilter, UnlessPayModifier, UnloweredGuard,
-    UntilCondition, VoteSubject, WheneverEventExpiry, ZoneChoiceCandidateSource, ZoneChoiceChooser,
-    ZoneChoiceGatherRole, ZoneOwner,
+    ObjectProperty, ObjectScope, OriginConstraint, OutsideGameSelectionMode, PerPlayerScope,
+    PerpetualModification, PlayPermissionInvalidation, PlayerChoiceDistinctness, PlayerFilter,
+    PlayerRelation, PlayerScope, PreventionAmount, PreventionScope, ProhibitedActivity,
+    PropertyAggregate, PtValue, QuantityExpr, QuantityRef, ReciprocalZoneChoiceRole,
+    ReplacementCondition, ReplacementDefinition, ResolutionCastWindow, RestrictionExpiry,
+    RestrictionPlayerScope, RevealUntilDisposition, RoundingMode, SharedQuality,
+    SharedQualityRelation, SiblingCondition, SkipScope, SpellStackToGraveyardReplacement,
+    StaticCondition, StaticDefinition, StepSkipTarget, SubAbilityLink, TapStateChange,
+    TargetFilter, TargetReadOrigin, TargetSelectionMode, ThisWayCause, TokenAttackDestination,
+    TrackedAnaphorSource, TriggerCondition, TriggerDefinition, TurnGate, TypeFilter, TypedFilter,
+    UnlessPayModifier, UnloweredGuard, UntilCondition, VoteSubject, WheneverEventExpiry,
+    ZoneChoiceCandidateSource, ZoneChoiceChooser, ZoneChoiceGatherRole, ZoneOwner,
 };
 // `DoubleTarget` has no production use in this module since the counter-doubling
 // discriminator moved to `Effect::is_counter_multiplication()`; the child
@@ -35021,6 +35021,24 @@ fn is_free_cast_exile_instead_rider(input: &str) -> bool {
 /// fold path (the 13 existing cast-a-copy cards) is left untouched.
 fn try_parse_cast_copies_with_count(lower: &str) -> Option<Effect> {
     let (rest, _) = tag::<_, _, OracleError<'_>>("cast ").parse(lower).ok()?;
+    if let Ok((_, (_, value, _, _))) = all_consuming((
+        tag::<_, _, OracleError<'_>>("any number of spells with total mana value "),
+        nom_primitives::parse_number,
+        tag(" or less from among the copies without paying their mana costs"),
+        opt(tag(".")),
+    ))
+    .parse(rest)
+    {
+        return Some(Effect::CastCopyOfCard {
+            target: tracked_set_filter(),
+            cost: ManaCost::zero(),
+            count: None,
+            selection_constraint: Some(ChooseFromZoneConstraint::TotalManaValue {
+                comparator: Comparator::LE,
+                value: value as i32,
+            }),
+        });
+    }
     // CR 707.12a: optional "up to N of " / "N of " cap on how many copies to cast.
     let (rest, count) = parse_cast_copies_count_prefix(rest);
     // CR 707.12: the copies created by the preceding "Copy …" clause.
@@ -35039,6 +35057,7 @@ fn try_parse_cast_copies_with_count(lower: &str) -> Option<Effect> {
         target: tracked_set_filter(),
         cost: ManaCost::zero(),
         count,
+        selection_constraint: None,
     })
 }
 
@@ -40155,6 +40174,7 @@ fn fold_cast_copy_of_card_defs(defs: &mut Vec<AbilityDefinition>) {
                 target: tracked_set_filter(),
                 cost: ManaCost::zero(),
                 count: None,
+                selection_constraint: None,
             };
             defs[index].optional = false;
             defs[index].repeat_for = None;
@@ -45521,6 +45541,36 @@ fn clause_player_choice_count(clause: &ParsedEffectClause) -> u8 {
         })
 }
 
+/// CR 400.11 + CR 608.2d: "reveal exactly two ... different names ... an
+/// opponent chooses one" is a single outside-game choice process. Keep the
+/// selection and destination semantics together instead of interpreting the
+/// later sentences as independent instructions.
+fn parse_outside_game_reveal_pair_ir(text: &str, kind: AbilityKind) -> Option<EffectChainIr> {
+    let lower = text.to_ascii_lowercase();
+    let (_, (may, _, _, _, _)) = all_consuming((
+        opt(tag::<_, _, OracleError<'_>>("you may ")),
+        tag("reveal exactly two cards you own with different names from outside the game. "),
+        tag("an opponent chooses one of them. "),
+        tag("you put that card into your hand"),
+        opt(tag(".")),
+    ))
+    .parse(lower.as_str())
+    .ok()?;
+
+    let mut clause = parsed_clause(Effect::SearchOutsideGame {
+        filter: TargetFilter::Any,
+        count: QuantityExpr::Fixed { value: 2 },
+        reveal: true,
+        destination: Zone::Hand,
+        source_pool: crate::types::ability::OutsideGameSourcePool::Sideboard,
+        selection_mode: OutsideGameSelectionMode::OpponentChoosesOne,
+    });
+    clause.optional = may.is_some();
+    Some(EffectChainIr::single_clause(
+        text, kind, clause, None, None, false,
+    ))
+}
+
 fn parse_effect_chain_ir_body(
     text: &str,
     kind: AbilityKind,
@@ -45532,6 +45582,9 @@ fn parse_effect_chain_ir_body(
     // CR 608.2c: the enclosing chain's player declaration, taken on entry so only
     // the one nested call that set it can read it.
     let enclosing_declared_player = ctx.enclosing_declared_player.take();
+    if let Some(ir) = parse_outside_game_reveal_pair_ir(text, kind) {
+        return ir;
+    }
     if let Some(ir) = parse_reciprocal_graveyard_choice_ir(text, kind) {
         return ir;
     }
@@ -49027,6 +49080,10 @@ fn parse_effect_chain_ir_body(
                 .where_x_expression(where_x_expression.clone())
                 .where_x_player_antecedents(chunk_ctx.player_antecedents())
                 .target_selection_mode(chunk_ctx.target_selection_mode)
+                .target_phrase_multi_target(chunk_ctx.target_phrase_multi_target.take())
+                .target_selection_constraints(std::mem::take(
+                    &mut chunk_ctx.target_selection_constraints,
+                ))
                 .target_chooser(chunk_ctx.target_chooser.clone())
                 .declared_target_choice_timing(chunk_ctx.declared_target_choice_timing.take())
                 .printed_color_choice(chunk_ctx.pending_printed_color_choice.take())
@@ -50999,6 +51056,10 @@ fn parse_effect_chain_ir_body(
                         .where_x_expression(where_x_expression)
                         .where_x_player_antecedents(chunk_ctx.player_antecedents())
                         .target_selection_mode(chunk_ctx.target_selection_mode)
+                        .target_phrase_multi_target(chunk_ctx.target_phrase_multi_target.take())
+                        .target_selection_constraints(std::mem::take(
+                            &mut chunk_ctx.target_selection_constraints,
+                        ))
                         .target_chooser(chunk_ctx.target_chooser.clone())
                         .declared_target_choice_timing(
                             chunk_ctx.declared_target_choice_timing.take(),
@@ -51168,6 +51229,10 @@ fn parse_effect_chain_ir_body(
                 .where_x_player_antecedents(chunk_ctx.player_antecedents())
                 .unless_pay(unless_pay)
                 .target_selection_mode(chunk_ctx.target_selection_mode)
+                .target_phrase_multi_target(chunk_ctx.target_phrase_multi_target.take())
+                .target_selection_constraints(std::mem::take(
+                    &mut chunk_ctx.target_selection_constraints,
+                ))
                 .target_chooser(chunk_ctx.target_chooser.clone())
                 .declared_target_choice_timing(chunk_ctx.declared_target_choice_timing.take())
                 .printed_color_choice(chunk_ctx.pending_printed_color_choice.take())

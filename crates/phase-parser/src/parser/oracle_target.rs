@@ -1,5 +1,5 @@
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_till, take_till1};
+use nom::bytes::complete::{tag, take_till, take_till1, take_until1};
 use nom::character::complete::{multispace0, one_of, satisfy, space1};
 use nom::combinator::{eof, map, map_opt, not, opt, peek, success, value, verify};
 use nom::multi::many0;
@@ -9,14 +9,15 @@ use nom::Parser;
 use crate::types::ability::{
     AggregateFunction, AttachmentKind, AttachmentReferent, CardTypeSetSource, ChoiceType,
     CombatHistoryScope, CombatRelation, CombatRelationSubject, Comparator, ControllerRef,
-    CostCategory, CountScope, CrewRelation, DamageKindFilter, FilterProp, NameStickerSet,
-    ObjectProperty, ObjectScope, Parity, ParitySource, PlayerFilter, PlayerRelation,
-    PropertyAggregate, PtStat, PtValueScope, QuantityExpr, QuantityRef, SeatDirection,
-    SharedQuality, SharedQualityRelation, TargetFilter, TargetSelectionMode, ThisWayCause,
-    TypeFilter, TypedFilter,
+    CostCategory, CountScope, CrewRelation, DamageKindFilter, FilterProp, MultiTargetSpec,
+    NameStickerSet, ObjectProperty, ObjectScope, Parity, ParitySource, PlayerFilter,
+    PlayerRelation, PropertyAggregate, PtStat, PtValueScope, QuantityExpr, QuantityRef,
+    SeatDirection, SharedQuality, SharedQualityRelation, TargetFilter, TargetSelectionMode,
+    ThisWayCause, TypeFilter, TypedFilter,
 };
 use crate::types::card_type::{noncreature_subtype_set, SubtypeSet, Supertype};
 use crate::types::counter::{CounterMatch, CounterType};
+use crate::types::game_state_kinds::TargetSelectionConstraint;
 use crate::types::identifiers::TrackedSetId;
 use crate::types::keywords::KeywordKind;
 use crate::types::mana::ManaColor;
@@ -841,6 +842,28 @@ pub fn parse_target_with_syntax<'a>(
     let mut syntax = TargetSyntax::Descriptor;
     let text = text.trim_start();
     let lower = text.to_lowercase();
+
+    if let Some(((), suffix_rest)) = nom_on_lower(text, &lower, |input| {
+        let (input, _) = tag::<_, _, OracleError<'_>>("target ").parse(input)?;
+        let (input, _) = take_until1(" of each card type").parse(input)?;
+        let (input, _) = tag(" of each card type").parse(input)?;
+        let (input, _) = not(satisfy(char::is_alphanumeric)).parse(input)?;
+        Ok((input, ()))
+    }) {
+        let target_end = text.len() - suffix_rest.len() - " of each card type".len();
+        let filter_text = text["target ".len()..target_end].trim_end();
+        let (filter, _, _) = parse_target_with_syntax(filter_text, ctx);
+        ctx.target_phrase_multi_target = Some(MultiTargetSpec::fixed(0, 8));
+        if !ctx
+            .target_selection_constraints
+            .contains(&TargetSelectionConstraint::DistinctCardTypes)
+        {
+            ctx.target_selection_constraints
+                .push(TargetSelectionConstraint::DistinctCardTypes);
+        }
+        syntax = TargetSyntax::TargetKeyword;
+        return (filter, suffix_rest, syntax);
+    }
 
     // CR 115.1 + CR 701.9b: Trailing " chosen at random" suffix on a noun-phrase
     // target (e.g. Zaffai, Thunder Conductor — "an opponent chosen at random").

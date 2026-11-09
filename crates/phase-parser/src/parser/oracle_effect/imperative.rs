@@ -59,9 +59,9 @@ use crate::types::ability::{
     CounterKindDomain, DigSource, DoorLockOp, Duration, Effect, EffectScope, ExtraPhaseAnchor,
     ExtraPhaseRecipient, FaceDownProfile, FilterProp, ForceBlockAttackerRef, GrantedAbilityScope,
     LibraryPosition, MassLibraryShuffleMode, MultiTargetSpec, ObjectSelectionCardinality,
-    ObjectSelectionEligibility, OutsideGameSourcePool, PerPlayerScope, PlayerFilter,
-    PlayerRelation, PlayerScope, PossessionAxis, PreventionAmount, PreventionScope, PtStat,
-    PtValue, QuantityExpr, QuantityRef, ReassembleControlMode, ReturnResultReadSpec,
+    ObjectSelectionEligibility, OutsideGameSelectionMode, OutsideGameSourcePool, PerPlayerScope,
+    PlayerFilter, PlayerRelation, PlayerScope, PossessionAxis, PreventionAmount, PreventionScope,
+    PtStat, PtValue, QuantityExpr, QuantityRef, ReassembleControlMode, ReturnResultReadSpec,
     SearchSelectionConstraint, StaticDefinition, StickerTicketCostPayment, TapCreaturesRequirement,
     TapStateChange, TargetChoiceTiming, TargetFilter, TargetSelectionMode, ThisWayCause,
     TokenAttackDestination, TypeFilter, TypedFilter, ZoneChoiceCandidateSource, ZoneOwner, ZoneRef,
@@ -4172,6 +4172,7 @@ pub(super) fn lower_search_and_creation_ast(ast: SearchCreationImperativeAst) ->
             reveal,
             destination,
             source_pool,
+            selection_mode: OutsideGameSelectionMode::ControllerTakesSelected,
         },
         SearchCreationImperativeAst::Dig {
             count,
@@ -20884,6 +20885,7 @@ mod tests {
                 reveal,
                 destination,
                 source_pool,
+                ..
             } => {
                 assert_eq!(count, QuantityExpr::up_to(QuantityExpr::Fixed { value: 1 }));
                 assert!(reveal);
@@ -21044,6 +21046,7 @@ mod tests {
                 reveal,
                 destination,
                 source_pool,
+                ..
             } => {
                 assert_eq!(
                     *filter,

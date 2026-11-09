@@ -278,6 +278,13 @@ fn human_response_model(waiting_for: &WaitingFor, semantic_owner: PlayerId) -> H
         WaitingFor::ModeChoice { .. } | WaitingFor::AbilityModeChoice { .. } => {
             HumanResponseModel::ModeSequence
         }
+        WaitingFor::OutsideGameChoice {
+            stage:
+                crate::types::game_state::OutsideGameChoiceStage::ControllerChoosesOpponent {
+                    ..
+                },
+            ..
+        } => HumanResponseModel::ExactCandidates(AuditedExactCandidates),
         WaitingFor::OutsideGameChoice { .. } => HumanResponseModel::OutsideSelection,
         WaitingFor::NamedChoice { .. } | WaitingFor::SecretAgendaChoice { .. } => {
             HumanResponseModel::TextChoice
@@ -445,6 +452,15 @@ fn classify_waiting_for(waiting_for: &WaitingFor) -> WaitingClassification {
         ),
         WaitingFor::ModeChoice { .. } | WaitingFor::AbilityModeChoice { .. } => (
             InteractionWaitingForCode::Sequence,
+            None,
+            Some(InteractionSlotKind::Single),
+        ),
+        WaitingFor::OutsideGameChoice {
+            stage:
+                crate::types::game_state::OutsideGameChoiceStage::ControllerChoosesOpponent { .. },
+            ..
+        } => (
+            InteractionWaitingForCode::Choose,
             None,
             Some(InteractionSlotKind::Single),
         ),

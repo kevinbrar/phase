@@ -39,6 +39,9 @@ pub enum TargetSelectionConstraint {
     DifferentTargetPlayers,
     /// CR 115.1 + CR 601.2c: Object targets must be controlled by different players.
     DifferentObjectControllers,
+    /// CR 115.1 + CR 601.2c + CR 205.2a: No two chosen object targets may
+    /// share a card type ("up to one target nonland card of each card type").
+    DistinctCardTypes,
     /// CR 115.1 + CR 601.2c + CR 400.1: Object targets must come from the same
     /// player-owned zone of the given kind, e.g. "from a single graveyard".
     SameZoneOwner { zone: Zone },

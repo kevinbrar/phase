@@ -499,6 +499,7 @@ fn scan_target_selection_constraint(c: &TargetSelectionConstraint, mode: ScanMod
     match c {
         TargetSelectionConstraint::DifferentTargetPlayers => Axes::NONE,
         TargetSelectionConstraint::DifferentObjectControllers => Axes::NONE,
+        TargetSelectionConstraint::DistinctCardTypes => Axes::NONE,
         TargetSelectionConstraint::SameZoneOwner { zone: _ } => Axes::NONE,
         TargetSelectionConstraint::TotalManaValue {
             value,
@@ -1108,6 +1109,7 @@ fn scan_effect(x: &Effect, mode: ScanMode) -> Axes {
             target,
             count,
             cost: _,
+            selection_constraint: _,
         } => {
             let mut acc = Axes::NONE;
             acc = acc.or(scan_target_filter(target, target_ctx, mode));
@@ -1430,6 +1432,7 @@ fn scan_effect(x: &Effect, mode: ScanMode) -> Axes {
             reveal: _,
             destination: _,
             source_pool: _,
+            selection_mode: _,
         } => {
             let mut acc = Axes::NONE;
             acc = acc.or(scan_target_filter(filter, target_ctx, mode));

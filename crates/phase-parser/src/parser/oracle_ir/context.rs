@@ -11,6 +11,7 @@ use crate::types::ability::{
     TargetSelectionMode, ZoneChoiceCandidateSource,
 };
 use crate::types::card_type::CoreType;
+use crate::types::game_state_kinds::TargetSelectionConstraint;
 use crate::types::zones::Zone;
 
 /// CR 611.2a + CR 608.2c: the window a chunk's clause printed at its head, read by
@@ -646,6 +647,10 @@ pub struct ParseContext {
     /// `parse_effect_chain_ir` snapshots this into the produced `ClauseIr` and
     /// resets it to `Chosen` for the next chunk so the marker is per-clause.
     pub target_selection_mode: TargetSelectionMode,
+    /// CR 115.1d: Bounded target cardinality produced by a target-phrase parser.
+    pub target_phrase_multi_target: Option<MultiTargetSpec>,
+    /// CR 115.3: Constraints produced by a target-phrase parser.
+    pub target_selection_constraints: Vec<TargetSelectionConstraint>,
     /// CR 601.2c + CR 603.3d: When set, this player (not the controller) announces
     /// the most recent target phrase's target(s) at stack placement. Set when a
     /// targeted "of their choice" suffix is stripped from a `ScopedPlayer`-controlled

@@ -1554,6 +1554,24 @@ pub fn candidate_actions_broad_with_probe(
             .collect(),
         WaitingFor::OutsideGameChoice {
             player,
+            opponent_candidates,
+            stage:
+                crate::types::game_state::OutsideGameChoiceStage::ControllerChoosesOpponent { .. },
+            ..
+        } => opponent_candidates
+            .iter()
+            .map(|opponent| {
+                candidate(
+                    GameAction::ChooseZoneOpponentChooser {
+                        opponent: *opponent,
+                    },
+                    TacticalClass::Selection,
+                    Some(*player),
+                )
+            })
+            .collect(),
+        WaitingFor::OutsideGameChoice {
+            player,
             choices,
             count,
             up_to,

@@ -420,6 +420,7 @@ mod tests {
                 },
                 cost: ManaCost::zero(),
                 count: None,
+                selection_constraint: None,
             },
         )
         .sub_ability(self_exile);

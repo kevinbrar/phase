@@ -1961,6 +1961,73 @@ fn ability_chain_has_unimplemented(ability: &AbilityDefinition) -> bool {
             .is_some_and(ability_chain_has_unimplemented)
 }
 
+#[test]
+fn uldaros_theorix_full_oracle_text_parses_distinct_type_targets_and_budget() {
+    let parsed = parse_oracle_text(
+        "Flying\nWhen Uldaros Theorix enters, if you cast him, exile up to one target nonland card of each card type from your graveyard. Copy those cards. You may cast any number of spells with total mana value 6 or less from among the copies without paying their mana costs. (Permanent spells cast this way become tokens.)",
+        "Uldaros Theorix",
+        &[],
+        &["Creature".to_string()],
+        &[],
+    );
+    let trigger = parsed
+        .triggers
+        .first()
+        .expect("Uldaros has an enters-the-battlefield trigger");
+    assert!(
+        matches!(
+            trigger.condition,
+            Some(crate::types::ability::TriggerCondition::WasCast { .. })
+        ),
+        "the trigger must be conditioned on Uldaros being cast: {trigger:#?}"
+    );
+    let execute = trigger
+        .execute
+        .as_deref()
+        .expect("the ETB trigger must have an execute body");
+
+    fn has_distinct_type_target(def: &AbilityDefinition) -> bool {
+        (def.multi_target == Some(crate::types::ability::MultiTargetSpec::fixed(0, 8))
+            && def.target_constraints.contains(
+                &crate::types::game_state_kinds::TargetSelectionConstraint::DistinctCardTypes,
+            ))
+            || def
+                .sub_ability
+                .as_deref()
+                .is_some_and(has_distinct_type_target)
+    }
+    assert!(
+        has_distinct_type_target(execute),
+        "the target phrase must declare zero to eight distinct card types: {execute:#?}"
+    );
+
+    fn cast_copy_with_budget(def: &AbilityDefinition) -> bool {
+        matches!(
+            def.effect.as_ref(),
+            Effect::CastCopyOfCard {
+                selection_constraint: Some(
+                    crate::types::ability::ChooseFromZoneConstraint::TotalManaValue {
+                        comparator: crate::types::ability::Comparator::LE,
+                        value: 6,
+                    }
+                ),
+                ..
+            }
+        ) || def
+            .sub_ability
+            .as_deref()
+            .is_some_and(cast_copy_with_budget)
+    }
+    assert!(
+        cast_copy_with_budget(execute),
+        "the copies must have a total mana-value budget of six: {execute:#?}"
+    );
+    assert!(
+        !ability_chain_has_unimplemented(execute),
+        "the complete trigger body must parse without Unimplemented: {execute:#?}"
+    );
+}
+
 /// CR 608.2c + CR 701.24a + CR 121.1 + CR 120.3: Molten Psyche's complete
 /// Oracle text keeps the all-player hand-to-library shuffle inside each player
 /// pass, then starts a distinct all-player draw instruction. Its Metalcraft

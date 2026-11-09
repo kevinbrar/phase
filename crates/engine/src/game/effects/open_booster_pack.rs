@@ -128,6 +128,8 @@ pub fn resolve(
         reveal: false,
         up_to,
         destination,
+        stage: crate::types::game_state::OutsideGameChoiceStage::ControllerSelects,
+        opponent_candidates: Vec::new(),
     };
     events.push(GameEvent::EffectResolved {
         kind: EffectKind::OpenBoosterPack,

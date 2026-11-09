@@ -2861,18 +2861,28 @@ fn filter_state_for_scope(state: &GameState, viewer: Option<PlayerId>) -> GameSt
         reveal,
         up_to,
         destination,
+        stage,
+        opponent_candidates,
         ..
-    } = state.waiting_for
+    } = &state.waiting_for
     {
-        if !can_view_private_for_player(player) {
+        if !can_view_private_for_player(*player)
+            && !matches!(
+                *stage,
+                crate::types::game_state::OutsideGameChoiceStage::ControllerChoosesOpponent { .. }
+                    | crate::types::game_state::OutsideGameChoiceStage::OpponentSelects { .. }
+            )
+        {
             filtered.waiting_for = WaitingFor::OutsideGameChoice {
-                player,
-                source_id,
+                player: *player,
+                source_id: *source_id,
                 choices: Vec::new(),
                 count: 0,
-                reveal,
-                up_to,
-                destination,
+                reveal: *reveal,
+                up_to: *up_to,
+                destination: *destination,
+                stage: *stage,
+                opponent_candidates: opponent_candidates.clone(),
             };
         }
     }

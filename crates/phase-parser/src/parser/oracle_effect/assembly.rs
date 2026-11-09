@@ -3679,7 +3679,9 @@ pub(crate) fn assemble_effect_chain(ir: &EffectChainIr) -> AbilityDefinition {
         // `ChooseObjectsIntoTrackedSet` instead owns its selection cardinality in
         // the effect's `min`/`max`; adding `multi_target` would duplicate that
         // resolver-owned selection state.
-        if !matches!(&*def.effect, Effect::ChooseObjectsIntoTrackedSet { .. }) {
+        if let Some(spec) = clause_ir.target_phrase_multi_target.clone() {
+            def = def.multi_target(spec);
+        } else if !matches!(&*def.effect, Effect::ChooseObjectsIntoTrackedSet { .. }) {
             if let Some(spec) =
                 extract_exact_target_multi_target(clause_ir.source.fragment().unwrap_or_default())
             {
@@ -3745,6 +3747,9 @@ pub(crate) fn assemble_effect_chain(ir: &EffectChainIr) -> AbilityDefinition {
             clause_ir.source.fragment().unwrap_or_default(),
         ) {
             def = def.target_constraint(constraint);
+        }
+        for constraint in &clause_ir.target_selection_constraints {
+            def = def.target_constraint(constraint.clone());
         }
         // CR 601.2d: Propagate distribute flag.
         if let Some(ref unit) = clause_ir.parsed.distribute {

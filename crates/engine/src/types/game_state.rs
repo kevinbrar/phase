@@ -177,6 +177,10 @@ fn is_default_interaction_serial(value: &str) -> bool {
     value == "1"
 }
 
+fn is_default_outside_game_choice_stage(stage: &OutsideGameChoiceStage) -> bool {
+    matches!(stage, OutsideGameChoiceStage::ControllerSelects)
+}
+
 fn is_zero_u32(value: &u32) -> bool {
     *value == 0
 }
@@ -11854,6 +11858,21 @@ pub struct OutsideGameChoiceEntry {
     pub name: String,
 }
 
+/// CR 608.2d + CR 400.11: Stage of an outside-game card selection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum OutsideGameChoiceStage {
+    /// The chooser selects cards that will be brought into the game.
+    #[default]
+    ControllerSelects,
+    /// The controller selects the pair to reveal; an opponent chooses one.
+    RevealPairThenOpponentSelects,
+    /// The controller chooses which opponent receives the revealed pair.
+    ControllerChoosesOpponent { owner: PlayerId },
+    /// An opponent selects the card that will be brought in for this owner.
+    OpponentSelects { owner: PlayerId },
+}
+
 fn default_one_u32() -> u32 {
     1
 }
@@ -18030,6 +18049,10 @@ pub enum WaitingFor {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         up_to: bool,
         destination: Zone,
+        #[serde(default, skip_serializing_if = "is_default_outside_game_choice_stage")]
+        stage: OutsideGameChoiceStage,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        opponent_candidates: Vec<PlayerId>,
     },
     /// CR 608.2d: Player selects card(s) from a tracked set (e.g., exiled cards).
     /// Chosen/unchosen cards flow into sub-abilities via pending_continuation,

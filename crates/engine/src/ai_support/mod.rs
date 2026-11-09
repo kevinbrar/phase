@@ -589,6 +589,7 @@ fn cheap_reject_candidate(state: &GameState, action: &GameAction) -> bool {
                 choices,
                 count,
                 up_to,
+                stage,
                 ..
             },
             GameAction::ChooseOutsideGameCards { selections },
@@ -647,8 +648,30 @@ fn cheap_reject_candidate(state: &GameState, action: &GameAction) -> bool {
                     OutsideGameChoiceSource::BoosterPack { pack_slot: slot, .. } if slot == pack_slot
                 ))
             });
-            !valid_count || exile_dup || pack_slot_dup || bad_sideboard || bad_exile || bad_pack_slot
+            !valid_count
+                || matches!(
+                    stage,
+                    crate::types::game_state::OutsideGameChoiceStage::ControllerChoosesOpponent {
+                        ..
+                    }
+                )
+                || exile_dup
+                || pack_slot_dup
+                || bad_sideboard
+                || bad_exile
+                || bad_pack_slot
         }
+        (
+            WaitingFor::OutsideGameChoice {
+                opponent_candidates,
+                stage:
+                    crate::types::game_state::OutsideGameChoiceStage::ControllerChoosesOpponent {
+                        ..
+                    },
+                ..
+            },
+            GameAction::ChooseZoneOpponentChooser { opponent },
+        ) => !opponent_candidates.contains(opponent),
         (WaitingFor::PairChoice { choices, .. }, GameAction::ChoosePair { partner }) => {
             partner.is_some_and(|partner| !choices.contains(&partner))
         }
