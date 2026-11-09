@@ -3370,7 +3370,10 @@ pub(crate) fn assemble_effect_chain(ir: &EffectChainIr) -> AbilityDefinition {
                     .to_ascii_lowercase(),
             );
         if clause_ir.is_optional
-            && !matches!(&clause_ir.parsed.effect, Effect::SearchOutsideGame { .. })
+            && !matches!(
+                &clause_ir.parsed.effect,
+                Effect::SearchOutsideGame { count, .. } if count.is_up_to()
+            )
             && !matches!(
                 &clause_ir.parsed.effect,
                 Effect::GrantCastingPermission { .. }
@@ -3502,12 +3505,14 @@ pub(crate) fn assemble_effect_chain(ir: &EffectChainIr) -> AbilityDefinition {
                     subject_anchored_optional_actor(&def, ActorBindingWindow::ThisResolution);
             }
         }
-        if matches!(&clause_ir.parsed.effect, Effect::SearchOutsideGame { .. }) {
+        if matches!(
+            &clause_ir.parsed.effect,
+            Effect::SearchOutsideGame { count, .. } if count.is_up_to()
+        ) {
             def.optional = false;
             def.optional_for = None;
-            // CR 608.2d: no gate opens, so no announcer exists. Inert at runtime
-            // (`upfront_optional_gate` requires `ability.optional`) but a stray key
-            // here would land in `card-data.json` and break V7's acceptance diff.
+            // CR 701.23j: an up-to outside-game selection carries its optionality
+            // internally, so no def-level gate or announcer is needed.
             def.optional_player = None;
         }
         if let Some(ref qty) = clause_ir.repeat_for {
@@ -4768,7 +4773,10 @@ pub(crate) fn assemble_effect_chain(ir: &EffectChainIr) -> AbilityDefinition {
     // with ~" pick as the host's last chosen card (Koh, the Face Stealer).
     append_remember_card_to_standalone_exiled_choice(&mut result);
     fold_search_choose_type_conditional_destination(&mut result);
-    if matches!(&*result.effect, Effect::SearchOutsideGame { .. }) {
+    if matches!(
+        &*result.effect,
+        Effect::SearchOutsideGame { count, .. } if count.is_up_to()
+    ) {
         result.optional = false;
         result.optional_for = None;
     }

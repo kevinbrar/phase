@@ -8491,6 +8491,36 @@ If you sang a song the whole time you were searching and shuffling, you may unta
     }
 
     #[test]
+    fn optional_you_may_exact_outside_game_pair_preserves_ability_optionality() {
+        let parsed = parse_named(
+            "You may reveal exactly two cards you own with different names from outside the game. \
+             An opponent chooses one of them. You put that card into your hand.",
+            "Extrapolate the Impossible",
+            &["Sorcery"],
+        );
+
+        assert!(
+            parsed
+                .abilities
+                .iter()
+                .all(|def| !def_tree_has_unimplemented(def)),
+            "Extrapolate must parse without Unimplemented: {:#?}",
+            parsed.abilities
+        );
+        let ability = parsed.abilities.first().expect("Extrapolate spell ability");
+        assert!(ability.optional, "the printed You may must be represented");
+        assert!(matches!(
+            ability.effect.as_ref(),
+            Effect::SearchOutsideGame {
+                count: QuantityExpr::Fixed { value: 2 },
+                selection_mode: crate::types::ability::OutsideGameSelectionMode::OpponentChoosesOne,
+                ..
+            }
+        ));
+        assert!(!has_swallowed_detector(&parsed, "Optional_YouMay"));
+    }
+
+    #[test]
     fn kaya_orzhov_usurper_plus_one_gates_gain_life_on_creature_exiled_this_way() {
         // PR #2447 / issue #1998 follow-up. With the +1 conditional now parsed,
         // Kaya has zero Unimplemented across all three loyalty abilities, so the

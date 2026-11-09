@@ -41,16 +41,18 @@ fn setup(sideboard: Vec<DeckEntry>) -> (GameRunner, engine::types::identifiers::
 }
 
 fn resolve_extrapolate(runner: &mut GameRunner, spell: engine::types::identifiers::ObjectId) {
-    runner.cast(spell).resolve();
+    runner.cast(spell).commit().stop_at_optional().resolve();
+    assert!(
+        matches!(
+            runner.state().waiting_for,
+            WaitingFor::OptionalEffectChoice { .. }
+        ),
+        "the spell's You may must be offered before revealing"
+    );
+    runner
+        .act(GameAction::DecideOptionalEffect { accept: true })
+        .expect("accept the optional reveal");
     runner.advance_until_stack_empty();
-    if matches!(
-        runner.state().waiting_for,
-        WaitingFor::OptionalEffectChoice { .. }
-    ) {
-        runner
-            .act(GameAction::DecideOptionalEffect { accept: true })
-            .expect("accept the optional reveal");
-    }
 }
 
 #[test]
