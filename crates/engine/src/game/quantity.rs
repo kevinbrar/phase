@@ -807,12 +807,13 @@ fn visit_characteristic_leaf<'s>(
             // so the read below measures the SELECTED occurrence.
             match filter_ctx.ability {
                 Some(_) => {
+                    let ability = filter_ctx.ability.unwrap();
                     // CR 115.1 + CR 601.2c: an unqualified spell-target
                     // aggregate reads every declared target slot across the
                     // chain, not only the root effect's local targets.
                     let selected = if slot.is_none() {
                         crate::game::ability_utils::declared_target_entries_in_chain(
-                            filter_ctx.ability.unwrap(),
+                            crate::game::targeting::resolving_root_ability(state, ability),
                         )
                         .into_iter()
                         .map(|entry| (entry.target, entry.pin))

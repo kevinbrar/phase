@@ -712,7 +712,7 @@ mod tests {
         // Bare collect-evidence cost.
         assert_eq!(
             mana_abilities::collect_evidence_cost_amount(&AbilityCost::CollectEvidence {
-                amount: 3
+                amount: CollectEvidenceAmount::Fixed(3)
             }),
             Some(3)
         );
