@@ -9795,6 +9795,39 @@ fn kili_alternative_equip_cost_is_conditional_and_once_per_turn() {
     );
 }
 
+#[test]
+fn urgent_necropsy_collect_evidence_uses_its_target_mana_values() {
+    let r = parse(
+        "As an additional cost to cast this spell, collect evidence X, where X is the total mana value of the permanents this spell targets.\nDestroy up to one target artifact, up to one target creature, up to one target enchantment, and up to one target planeswalker.",
+        "Urgent Necropsy",
+        &[],
+        &["Instant"],
+        &[],
+    );
+    assert!(
+        !parsed_has_unimplemented(&r),
+        "Urgent Necropsy must have no unimplemented effects: {r:#?}"
+    );
+    let Some(AdditionalCost::Required(AbilityCost::CollectEvidence {
+        amount:
+            crate::types::ability::CollectEvidenceAmount::Quantity(QuantityExpr::Ref {
+                qty: QuantityRef::PropertyAggregate(aggregate),
+            }),
+    })) = r.additional_cost.as_ref()
+    else {
+        panic!(
+            "expected target-dependent Collect Evidence additional cost: {:?}",
+            r.additional_cost
+        );
+    };
+    assert_eq!(aggregate.function(), AggregateFunction::Sum);
+    assert_eq!(aggregate.property(), ObjectProperty::ManaValue);
+    assert!(matches!(
+        aggregate.source(),
+        crate::types::ability::CardTypeSetSource::TargetedObjects { slot: None }
+    ));
+}
+
 // CR 118.9 + CR 701.20a + CR 601.3: Land Grant — "If you have no land cards in
 // hand, you may reveal your hand rather than pay this spell's mana cost."
 // routes to a conditional alternative-cost casting option whose cost is an
