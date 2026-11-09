@@ -546,7 +546,9 @@ pub(crate) fn keys_from_event(event: &GameEvent, state: &GameState) -> Keys {
             }
         }
         GameEvent::XValueChosen { .. } => {}
-        GameEvent::AbilityActivated { .. } => push(TriggerEventKey::AbilityOrCopyActivated),
+        GameEvent::AbilityActivated { .. } | GameEvent::AbilityTriggered { .. } => {
+            push(TriggerEventKey::AbilityOrCopyActivated)
+        }
         GameEvent::ZoneChanged {
             from,
             to,

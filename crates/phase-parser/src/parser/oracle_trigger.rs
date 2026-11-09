@@ -13737,6 +13737,28 @@ pub fn parse_trigger_condition(
 
     let lower = condition.to_lowercase();
 
+    let ability_triggered_head =
+        "a creature you control attacking causes a triggered ability of that creature to trigger";
+    if all_consuming(alt((
+        preceded(
+            tag::<_, _, OracleError<'_>>("whenever "),
+            tag(ability_triggered_head),
+        ),
+        preceded(tag("when "), tag(ability_triggered_head)),
+        tag(ability_triggered_head),
+    )))
+    .parse(lower.as_str())
+    .is_ok()
+    {
+        let mode = TriggerMode::AbilityTriggered;
+        let mut def = make_base();
+        def.mode = mode.clone();
+        def.valid_card = Some(TargetFilter::Typed(
+            TypedFilter::creature().controller(ControllerRef::You),
+        ));
+        return (mode, def);
+    }
+
     if let Some(result) = try_parse_named_trigger_mode(&lower) {
         return result;
     }
@@ -26341,5 +26363,34 @@ mod attached_set_trigger_tests {
                 to: AttachmentReferent::Host { filter }
             } if **filter == TargetFilter::Typed(TypedFilter::creature())
         ));
+    }
+}
+
+#[cfg(test)]
+mod ability_triggered_attack_trigger_tests {
+    use super::parse_trigger_line;
+    use crate::types::ability::{ControllerRef, TargetFilter, TypedFilter};
+    use crate::types::triggers::TriggerMode;
+
+    #[test]
+    fn firebender_ascension_parses_ability_triggered_attack_condition() {
+        let trigger = parse_trigger_line(
+            "Whenever a creature you control attacking causes a triggered ability of that creature to trigger, put a quest counter on this enchantment. Then if it has four or more quest counters on it, you may copy that ability. You may choose new targets for the copy.",
+            "Firebender Ascension",
+        );
+
+        assert_eq!(trigger.mode, TriggerMode::AbilityTriggered);
+        assert_eq!(
+            trigger.valid_card,
+            Some(TargetFilter::Typed(
+                TypedFilter::creature().controller(ControllerRef::You)
+            ))
+        );
+        let execute = trigger.execute.expect("trigger body must be parsed");
+        let body = format!("{execute:?}");
+        assert!(!body.contains("Unimplemented"), "{body}");
+        assert!(body.contains("CopySpell"), "{body}");
+        assert!(body.contains("ParentTarget"), "{body}");
+        assert!(body.contains("MayChooseNewTargets"), "{body}");
     }
 }

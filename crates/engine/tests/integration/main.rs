@@ -89,6 +89,7 @@ mod exuberant_wolfbear_base_pt_target;
 mod fantastic_four_bounded_loop;
 mod fin_sidequest_turn_history_conditions;
 mod finneas_token_or_rabbit_counters;
+mod firebender_ascension;
 mod first_combat_phase_static;
 mod fixed_damage_amount_thresholds;
 mod flamerush_rider_tapped_attacking_copy;

@@ -1079,6 +1079,16 @@ pub enum GameEvent {
         object_id: ObjectId,
         value: u32,
     },
+    /// CR 603.2 + CR 508.1m + CR 508.3a: one triggered-ability instance was
+    /// caused by the named event. `trigger_instance` is the reserved stack
+    /// entry identity, carried through collection so observers can refer to
+    /// this exact ability rather than another ability with the same source.
+    AbilityTriggered {
+        trigger_instance: ObjectId,
+        source: ObjectId,
+        controller: PlayerId,
+        cause: Box<GameEvent>,
+    },
     /// CR 602.2b + CR 601.2i + CR 605.3: An activated ability has become
     /// activated (all costs paid). Emitted for every activation, including
     /// mana abilities (CR 605.3: activating a mana ability follows CR 602.2;

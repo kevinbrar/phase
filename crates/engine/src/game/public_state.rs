@@ -599,6 +599,7 @@ pub fn mark_public_state_from_events(state: &mut GameState, events: &[GameEvent]
             | GameEvent::DebugActionUsed { .. }
             | GameEvent::DebugPermissionGranted { .. }
             | GameEvent::DebugPermissionRevoked { .. }
+            | GameEvent::AbilityTriggered { .. }
             | GameEvent::StickerPlaced { .. } => {}
         }
     }

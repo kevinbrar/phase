@@ -99,6 +99,7 @@ fn trigger_route(mode: &TriggerMode) -> Option<TriggerRoute> {
         TriggerMode::SpellCast | TriggerMode::SpellCastOrCopy | TriggerMode::SpellCopy => {
             silent(match_spell_cast)
         }
+        TriggerMode::AbilityTriggered => silent(match_ability_triggered),
         TriggerMode::Attacks => silent(match_attacks),
         // CR 701.43d: linked "when you do" trigger fires when the source creature
         // is exerted as it attacks.
@@ -263,7 +264,6 @@ fn trigger_route(mode: &TriggerMode) -> Option<TriggerRoute> {
         // rewrites its arm, and with it its class.
         TriggerMode::AbilityCast
         | TriggerMode::AbilityResolves
-        | TriggerMode::AbilityTriggered
         | TriggerMode::SpellAbilityCast
         | TriggerMode::SpellAbilityCopy
         | TriggerMode::CounterTypeAddedAll
@@ -341,6 +341,7 @@ pub fn build_trigger_registry() -> HashMap<TriggerMode, TriggerMatcher> {
     );
     r.insert(TriggerMode::SpellCast, match_spell_cast);
     r.insert(TriggerMode::SpellCastOrCopy, match_spell_cast);
+    r.insert(TriggerMode::AbilityTriggered, match_ability_triggered);
     r.insert(TriggerMode::Attacks, match_attacks);
     r.insert(TriggerMode::Exerted, match_exerted);
     r.insert(TriggerMode::AttackersDeclared, match_attackers_declared);
@@ -585,7 +586,6 @@ pub fn build_trigger_registry() -> HashMap<TriggerMode, TriggerMatcher> {
         TriggerMode::DamagePreventedOnce,
         TriggerMode::AbilityCast,
         TriggerMode::AbilityResolves,
-        TriggerMode::AbilityTriggered,
         TriggerMode::SpellAbilityCast,
         TriggerMode::SpellAbilityCopy,
         // TriggerMode::CounterPlayerAddedAll — moved to real matcher above
@@ -1104,6 +1104,7 @@ fn count_matching_trigger_event_subjects(
     let count_one = |id| u32::from(matches(id));
     match event {
         GameEvent::AttackersDeclared { attacker_ids, .. } => count_slice(attacker_ids),
+        GameEvent::AbilityTriggered { source, .. } => count_one(*source),
         GameEvent::CreatureExerted { object_id, .. } => count_one(*object_id),
         GameEvent::CreatureEnlisted { attacker, .. } => count_one(*attacker),
         GameEvent::ArmyAmassed { object_id, .. } => count_one(*object_id),
@@ -2074,6 +2075,23 @@ pub(super) fn match_attacks(
     state: &GameState,
 ) -> bool {
     !matching_attack_events(event, trigger, source_context, state).is_empty()
+}
+
+/// CR 603.2 + CR 508.1m + CR 508.3a: matches an ability instance caused by
+/// an attack declaration when that ability's source is the attacking creature.
+pub(super) fn match_ability_triggered(
+    event: &GameEvent,
+    trigger: &TriggerDefinition,
+    source_context: &TriggerSourceContext,
+    state: &GameState,
+) -> bool {
+    let GameEvent::AbilityTriggered { source, cause, .. } = event else {
+        return false;
+    };
+    let GameEvent::AttackersDeclared { attacker_ids, .. } = cause.as_ref() else {
+        return false;
+    };
+    attacker_ids.contains(source) && valid_card_matches(trigger, state, *source, source_context)
 }
 
 /// CR 701.43a + CR 701.43d: Matches a permanent being exerted. The linked

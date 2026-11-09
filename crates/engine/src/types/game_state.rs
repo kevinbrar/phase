@@ -35939,6 +35939,7 @@ impl GameState {
                     incarnation: Some(incarnation),
                     ..
                 } => Some((*object_id, incarnation)),
+                GameEvent::AbilityTriggered { cause, .. } => named_incarnation(cause),
                 // Exhaustive on purpose: a new event that names an incarnation must
                 // decide here whether loop normalization renumbers it.
                 GameEvent::PermanentTapped {

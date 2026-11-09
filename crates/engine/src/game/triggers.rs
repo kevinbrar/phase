@@ -432,6 +432,12 @@ pub struct PendingTriggerContext {
     /// remain source-compatible.
     #[serde(default, skip_serializing_if = "trigger_firing_is_unknown")]
     pub(crate) firing: TriggerFiring,
+    /// CR 603.2: identity reserved during collection for the stack entry this
+    /// triggered ability instance will create.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) trigger_instance: Option<ObjectId>,
+    #[serde(skip)]
+    collection_event_index: Option<usize>,
 }
 
 fn trigger_firing_is_unknown(firing: &TriggerFiring) -> bool {
@@ -458,6 +464,8 @@ impl PendingTriggerContext {
             dispatch_origin: PendingTriggerDispatchOrigin::Normal,
             batch_origin: DeferredTriggerBatchOrigin::Ordinary,
             firing,
+            trigger_instance: None,
+            collection_event_index: None,
         }
     }
 
@@ -476,6 +484,8 @@ impl PendingTriggerContext {
             dispatch_origin: PendingTriggerDispatchOrigin::Normal,
             batch_origin: DeferredTriggerBatchOrigin::Ordinary,
             firing,
+            trigger_instance: None,
+            collection_event_index: None,
         }
     }
 
@@ -488,6 +498,8 @@ impl PendingTriggerContext {
             dispatch_origin: PendingTriggerDispatchOrigin::Delayed,
             batch_origin: DeferredTriggerBatchOrigin::Ordinary,
             firing: identity.firing(),
+            trigger_instance: None,
+            collection_event_index: None,
         }
     }
 
@@ -5487,11 +5499,9 @@ fn collect_pending_triggers_with_collection(
                     batched_this_pass.insert((obj_id, matched.trig_idx));
                 }
                 registered_this_event.insert((obj_id, matched.trig_idx));
-                let trigger_context =
+                let mut trigger_context =
                     PendingTriggerContext::batched(matched.pending, matched.trigger_events);
-                if drop_auto_inert_noop_trigger(state, &trigger_context) {
-                    continue;
-                }
+                trigger_context.collection_event_index = Some(event_idx);
                 pending.push(trigger_context);
             }
 
@@ -5610,7 +5620,7 @@ fn collect_pending_triggers_with_collection(
                             ResolvedAbility::new(fb_effect, Vec::new(), obj_id, controller);
                         let fb_trig_def = TriggerDefinition::new(TriggerMode::Firebend)
                             .description("Firebending".to_string());
-                        pending.push(PendingTriggerContext::single(PendingTrigger {
+                        let mut trigger_context = PendingTriggerContext::single(PendingTrigger {
                             source_id: obj_id,
                             controller,
                             condition: fb_trig_def.condition,
@@ -5628,7 +5638,9 @@ fn collect_pending_triggers_with_collection(
                             subject_match_count: None,
                             die_result: None,
                             provenance: None,
-                        }));
+                        });
+                        trigger_context.collection_event_index = Some(event_idx);
+                        pending.push(trigger_context);
                     }
                 }
             }
@@ -5658,7 +5670,7 @@ fn collect_pending_triggers_with_collection(
                         ResolvedAbility::new(decayed_effect, Vec::new(), obj_id, controller);
                     let decayed_trigger = TriggerDefinition::new(TriggerMode::Attacks)
                         .description("Decayed".to_string());
-                    pending.push(PendingTriggerContext::single(PendingTrigger {
+                    let mut trigger_context = PendingTriggerContext::single(PendingTrigger {
                         source_id: obj_id,
                         controller,
                         condition: decayed_trigger.condition,
@@ -5674,7 +5686,9 @@ fn collect_pending_triggers_with_collection(
                         subject_match_count: None,
                         die_result: None,
                         provenance: None,
-                    }));
+                    });
+                    trigger_context.collection_event_index = Some(event_idx);
+                    pending.push(trigger_context);
                 }
             }
 
@@ -7386,6 +7400,88 @@ fn collect_pending_triggers_with_collection(
     // Scan battlefield for objects with StaticMode::Panharmonicon statics,
     // then clone matching pending triggers.
     apply_trigger_doubling(state, &mut pending);
+
+    // CR 603.2 + CR 508.1m + CR 508.3a: Each attack-caused trigger whose
+    // source is the declared attacker gets an identity before observers are
+    // collected. Reserve the same ObjectId that stack placement will use.
+    for trigger_context in &mut pending {
+        let trigger_instance = ObjectId(state.next_object_id);
+        state.next_object_id += 1;
+        trigger_context.trigger_instance = Some(trigger_instance);
+    }
+
+    let mut ability_triggered_pending = Vec::new();
+    for trigger_context in &pending {
+        let Some(cause @ GameEvent::AttackersDeclared { attacker_ids, .. }) =
+            trigger_context.pending.trigger_event.as_ref()
+        else {
+            continue;
+        };
+        if !attacker_ids.contains(&trigger_context.pending.source_id) {
+            continue;
+        }
+        let cause_index = trigger_context
+            .collection_event_index
+            .or_else(|| events.iter().position(|event| event == cause));
+        let Some(cause_index) = cause_index else {
+            continue;
+        };
+        let ability_event = GameEvent::AbilityTriggered {
+            trigger_instance: trigger_context
+                .trigger_instance
+                .expect("collected trigger instance must have a reserved identity"),
+            source: trigger_context.pending.source_id,
+            controller: trigger_context.pending.controller,
+            cause: Box::new(cause.clone()),
+        };
+        let candidates = super::trigger_index::candidates_for_event(state, &ability_event);
+        let mut registered_this_event = HashSet::new();
+        for source_id in candidates {
+            if !live_battlefield_source_was_present_at_event(
+                cause_index,
+                source_id,
+                &battlefield_entry_index,
+            ) {
+                continue;
+            }
+            let Some(source_obj) = state.objects.get(&source_id) else {
+                continue;
+            };
+            let matched_triggers = collect_matching_triggers(
+                state,
+                &ability_event,
+                std::slice::from_ref(&ability_event),
+                source_obj,
+                source_obj.entered_battlefield_turn.unwrap_or(0),
+                Some(Zone::Battlefield),
+                &mut batched_this_pass,
+                &mut registered_this_event,
+                &active_suppress_triggers,
+                collection,
+                TriggerSourceVisit::Observer,
+            );
+            for matched in matched_triggers {
+                if !session.record_match(state, &matched, &ability_event) {
+                    continue;
+                }
+                if matched.batched {
+                    batched_this_pass.insert((source_id, matched.trig_idx));
+                }
+                registered_this_event.insert((source_id, matched.trig_idx));
+                let mut context =
+                    PendingTriggerContext::batched(matched.pending, matched.trigger_events);
+                context.collection_event_index = Some(cause_index);
+                ability_triggered_pending.push(context);
+            }
+        }
+    }
+    apply_trigger_doubling(state, &mut ability_triggered_pending);
+    for trigger_context in &mut ability_triggered_pending {
+        let trigger_instance = ObjectId(state.next_object_id);
+        state.next_object_id += 1;
+        trigger_context.trigger_instance = Some(trigger_instance);
+    }
+    pending.extend(ability_triggered_pending);
     pending = filter_auto_inert_noop_triggers(state, pending);
 
     // CR 800.4d: a departing permanent's own leaves-the-battlefield abilities
@@ -10135,11 +10231,31 @@ fn push_pending_trigger_to_stack_with_firing(
 
 fn push_pending_trigger_to_stack_with_firing_and_duration_events(
     state: &mut GameState,
+    trigger: PendingTrigger,
+    trigger_events: Vec<GameEvent>,
+    duration_events: Vec<DurationEvent>,
+    events: &mut Vec<GameEvent>,
+    firing: TriggerFiring,
+) -> ObjectId {
+    push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
+        state,
+        trigger,
+        trigger_events,
+        duration_events,
+        events,
+        firing,
+        None,
+    )
+}
+
+fn push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
+    state: &mut GameState,
     mut trigger: PendingTrigger,
     trigger_events: Vec<GameEvent>,
     duration_events: Vec<DurationEvent>,
     events: &mut Vec<GameEvent>,
     firing: TriggerFiring,
+    reserved_entry_id: Option<ObjectId>,
 ) -> ObjectId {
     for duration_event in duration_events {
         trigger
@@ -10180,8 +10296,11 @@ fn push_pending_trigger_to_stack_with_firing_and_duration_events(
     );
     seed_damage_event_recipient_pin(state, &mut ability, trigger_event.as_ref(), 0);
 
-    let entry_id = ObjectId(state.next_object_id);
-    state.next_object_id += 1;
+    let entry_id = reserved_entry_id.unwrap_or_else(|| {
+        let entry_id = ObjectId(state.next_object_id);
+        state.next_object_id += 1;
+        entry_id
+    });
     if trigger_events.len() > 1 {
         state
             .stack_trigger_event_batches
@@ -10720,15 +10839,17 @@ fn dispatch_pending_trigger_context_with_origin(
     let context_pending = trigger_context.pending.clone();
     let context_events = trigger_context.trigger_events.clone();
     let context_duration_events = trigger_context.duration_events.clone();
+    let trigger_instance = trigger_context.trigger_instance;
     match dispatch_pending_trigger_context(state, trigger_context, events_out) {
         TriggerDispatchDisposition::DroppedTargetUnresolved if firing.is_delayed() => {
-            push_pending_trigger_to_stack_with_firing_and_duration_events(
+            push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
                 state,
                 context_pending,
                 context_events,
                 context_duration_events,
                 events_out,
                 firing,
+                trigger_instance,
             );
             TriggerDispatchDisposition::Pushed
         }
@@ -10957,6 +11078,7 @@ fn dispatch_pending_trigger_context_core(
         trigger_events,
         duration_events,
         firing,
+        trigger_instance,
         ..
     } = trigger_context;
 
@@ -11040,13 +11162,14 @@ fn dispatch_pending_trigger_context_core(
             let controller = trigger.controller;
             let source_id = trigger.source_id;
             let pending_for_state = trigger.clone();
-            let entry_id = push_pending_trigger_to_stack_with_firing_and_duration_events(
+            let entry_id = push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
                 state,
                 trigger,
                 trigger_events.clone(),
                 duration_events.clone(),
                 events_out,
                 firing,
+                trigger_instance,
             );
             state.pending_trigger_event_batch = trigger_events;
             state.pending_trigger = Some(Box::new(pending_for_state));
@@ -11175,13 +11298,14 @@ fn dispatch_pending_trigger_context_core(
                 }
                 return TriggerDispatchDisposition::ResolvedInline;
             }
-            push_pending_trigger_to_stack_with_firing_and_duration_events(
+            push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
                 state,
                 trigger,
                 trigger_events,
                 duration_events,
                 events_out,
                 firing,
+                trigger_instance,
             );
             restore_trigger_event_context(state, context_snapshot);
             TriggerDispatchDisposition::Pushed
@@ -11220,13 +11344,14 @@ fn dispatch_pending_trigger_context_core(
                             let player = prepared_trigger.controller;
                             let pending_for_state = prepared_trigger.clone();
                             let entry_id =
-                                push_pending_trigger_to_stack_with_firing_and_duration_events(
+                                push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
                                     state,
                                     prepared_trigger,
                                     trigger_events.clone(),
                                     duration_events.clone(),
                                     events_out,
                                     firing,
+                                    trigger_instance,
                                 );
                             state.pending_trigger_event_batch = trigger_events;
                             state.pending_trigger = Some(Box::new(pending_for_state));
@@ -11246,13 +11371,14 @@ fn dispatch_pending_trigger_context_core(
                     }
                 }
             }
-            push_pending_trigger_to_stack_with_firing_and_duration_events(
+            push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
                 state,
                 prepared_trigger,
                 trigger_events,
                 duration_events,
                 events_out,
                 firing,
+                trigger_instance,
             );
             restore_trigger_event_context(state, context_snapshot);
             TriggerDispatchDisposition::Pushed
@@ -11264,13 +11390,14 @@ fn dispatch_pending_trigger_context_core(
             // mutates the on-stack entry's `ability.targets` when each target
             // is chosen.
             let pending_for_state = trigger.clone();
-            let entry_id = push_pending_trigger_to_stack_with_firing_and_duration_events(
+            let entry_id = push_pending_trigger_to_stack_with_firing_and_duration_events_and_id(
                 state,
                 trigger,
                 trigger_events.clone(),
                 duration_events.clone(),
                 events_out,
                 firing,
+                trigger_instance,
             );
             state.pending_trigger_event_batch = trigger_events;
             state.pending_trigger = Some(Box::new(pending_for_state));
@@ -16042,6 +16169,12 @@ fn collect_pending_and_delayed_triggers_reporting_terminalized(
     } = collect_matching_delayed_triggers(state, delayed_events, delayed_scope);
     let mut contexts = normal_pending;
     contexts.extend(delayed_pending);
+    for context in &mut contexts {
+        if context.trigger_instance.is_none() {
+            context.trigger_instance = Some(ObjectId(state.next_object_id));
+            state.next_object_id += 1;
+        }
+    }
     contexts.sort_by_key(|ctx| {
         (
             trigger_apnap_rank(state, ctx.pending.controller),

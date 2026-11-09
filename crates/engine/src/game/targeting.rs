@@ -3101,6 +3101,7 @@ pub(crate) fn extract_source_from_event(
         GameEvent::SpellCast { object_id, .. } => Some(*object_id),
         GameEvent::DamageDealt { source_id, .. } => Some(*source_id),
         GameEvent::AbilityActivated { source_id, .. } => Some(*source_id),
+        GameEvent::AbilityTriggered { source, .. } => Some(*source),
         GameEvent::ZoneChanged { object_id, .. } => Some(*object_id),
         GameEvent::PermanentTapped { object_id, .. } => Some(*object_id),
         GameEvent::PermanentUntapped { object_id } => Some(*object_id),
@@ -3245,6 +3246,7 @@ pub(crate) fn extract_target_object_from_event(
         | GameEvent::SpellCopied { .. }
         | GameEvent::XValueChosen { .. }
         | GameEvent::AbilityActivated { .. }
+        | GameEvent::AbilityTriggered { .. }
         | GameEvent::ZoneChanged { .. }
         | GameEvent::LifeChanged { .. }
         | GameEvent::ManaAdded { .. }

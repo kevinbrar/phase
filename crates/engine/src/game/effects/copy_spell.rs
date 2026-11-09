@@ -636,6 +636,28 @@ fn copy_source_from_triggering_activation(source: TriggeringActivation<'_>) -> C
 }
 
 fn copy_source_entry(state: &GameState, ability: &ResolvedAbility) -> CopySourceLookup {
+    if let (
+        Effect::CopySpell {
+            target: TargetFilter::ParentTarget,
+            ..
+        },
+        Some(GameEvent::AbilityTriggered {
+            trigger_instance, ..
+        }),
+    ) = (&ability.effect, state.current_trigger_event.as_ref())
+    {
+        return state
+            .stack
+            .iter()
+            .find(|entry| {
+                entry.id == *trigger_instance
+                    && matches!(entry.kind, StackEntryKind::TriggeredAbility { .. })
+            })
+            .cloned()
+            .map(|entry| Box::new(CopySource::on_stack(entry)))
+            .map_or(CopySourceLookup::Gone, CopySourceLookup::Source);
+    }
+
     if let Effect::CopySpell {
         target, retarget, ..
     } = &ability.effect

@@ -2407,7 +2407,7 @@ export type KeywordAction =
 export type StackEntryKind =
   | { type: "Spell"; data: { card_id: CardId; ability?: ResolvedAbility; actual_mana_spent?: number } }
   | { type: "ActivatedAbility"; data: { source_id: ObjectId; ability: ResolvedAbility } }
-  | { type: "TriggeredAbility"; data: { source_id: ObjectId; ability: ResolvedAbility; description?: string; source_name?: string; provenance?: SyntheticTriggerProvenance } }
+  | { type: "TriggeredAbility"; data: { source_id: ObjectId; ability: ResolvedAbility; trigger_event?: GameEvent; description?: string; source_name?: string; provenance?: SyntheticTriggerProvenance } }
   | { type: "KeywordAction"; data: { action: KeywordAction } }
   // Pre-M10 combat damage on the stack: one object per combat damage step,
   // holding that step's frozen assignments. Neither a spell nor an ability, so
@@ -3890,6 +3890,7 @@ export type GameEvent =
   // `trigger_state`, `stack_entry` and `activation_cost` are engine-internal
   // trigger authority the UI never renders.
   | { type: "AbilityActivated"; data: { player_id: PlayerId; source_id: ObjectId; kind?: ActivatedAbilityKind } }
+  | { type: "AbilityTriggered"; data: { trigger_instance: ObjectId; source: ObjectId; controller: PlayerId; cause: GameEvent } }
   | { type: "ExhaustAbilityActivated"; data: { player_id: PlayerId; source_id: ObjectId; is_mana_ability: boolean } }
   // `from` is null for an object that enters from no zone (a created token).
   | { type: "ZoneChanged"; data: { object_id: ObjectId; from: Zone | null; to: Zone } }

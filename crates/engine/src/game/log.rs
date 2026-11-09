@@ -514,7 +514,8 @@ fn importance(event: &GameEvent) -> LogImportance {
         | GameEvent::PhysicalContestStarted { .. }
         | GameEvent::PhysicalContestResolved { .. }
         | GameEvent::VoteCast { .. }
-        | GameEvent::VoteResolved { .. } => LogImportance::Detail,
+        | GameEvent::VoteResolved { .. }
+        | GameEvent::AbilityTriggered { .. } => LogImportance::Detail,
     }
 }
 
@@ -573,6 +574,7 @@ fn tone(event: &GameEvent) -> LogTone {
         | GameEvent::PhysicalContestResolved { .. }
         | GameEvent::VoteCast { .. }
         | GameEvent::VoteResolved { .. } => LogTone::Informational,
+        GameEvent::AbilityTriggered { .. } => LogTone::Neutral,
         // CR 701.17a + CR 701.17c: never narrated, because the paired `ZoneChanged`
         // already names the milled card and this event exists for mill triggers.
         GameEvent::Milled { .. }
@@ -921,6 +923,7 @@ fn categorize(event: &GameEvent) -> LogCategory {
         GameEvent::SpellCast { .. }
         | GameEvent::SpellCopied { .. }
         | GameEvent::AbilityActivated { .. }
+        | GameEvent::AbilityTriggered { .. }
         | GameEvent::NinjutsuActivated { .. }
         | GameEvent::KeywordAbilityActivated { .. }
         | GameEvent::StackPushed { .. }
@@ -1084,6 +1087,7 @@ fn format_segments(event: &GameEvent, state: &GameState) -> Vec<LogSegment> {
     match event {
         GameEvent::GameStarted => vec![text("Game started")],
         GameEvent::HiddenSearchViewed { .. } => vec![],
+        GameEvent::AbilityTriggered { .. } => vec![],
         GameEvent::ExtraTurnCreated { .. } => vec![],
         // CR 701.17a + CR 701.17c: never narrated, because the paired `ZoneChanged`
         // already names the milled card and this event exists for mill triggers.
