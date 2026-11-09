@@ -76,7 +76,9 @@ fn kylox_line_zero_dispatches_collect_evidence_animate() {
     // CR 701.59a: the cost is collect evidence 6.
     match ability.cost.as_ref() {
         Some(cost) if cost_has_collect_evidence(cost) => match cost {
-            AbilityCost::CollectEvidence { amount } => {
+            AbilityCost::CollectEvidence {
+                amount: engine::types::ability::CollectEvidenceAmount::Fixed(amount),
+            } => {
                 assert_eq!(*amount, 6, "collect evidence 6")
             }
             other => panic!("expected bare CollectEvidence cost, got {other:?}"),

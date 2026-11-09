@@ -1618,14 +1618,17 @@ impl AbilityCostLegPayability for AbilityCost {
             // graveyard cards that can be exiled as evidence is less than N.
             // CR 601.2a vs CR 602.2a: a spell being priced is one of them only
             // until announced, an ability's source stays one.
-            AbilityCost::CollectEvidence { amount } => {
-                super::effects::collect_evidence::can_collect_evidence(
-                    state,
-                    player,
-                    role.spell_being_cast(source),
-                    *amount,
-                )
-            }
+            AbilityCost::CollectEvidence { amount } => match amount {
+                crate::types::ability::CollectEvidenceAmount::Fixed(amount) => {
+                    super::effects::collect_evidence::can_collect_evidence(
+                        state,
+                        player,
+                        role.spell_being_cast(source),
+                        *amount,
+                    )
+                }
+                crate::types::ability::CollectEvidenceAmount::Quantity(_) => true,
+            },
             // CR 118.3 + CR 601.2b: An "exile any number of [filter] with
             // [aggregate] [cmp] N" cost is payable iff the aggregate over EVERY
             // eligible object (the maximal chosen set) satisfies the comparator.
@@ -3378,7 +3381,9 @@ mod tests {
         let elsewhere = scenario.add_creature(P0, "Battlefield Source", 2, 2).id();
         let state = &scenario.state;
 
-        let alone = AbilityCost::CollectEvidence { amount: 6 };
+        let alone = AbilityCost::CollectEvidence {
+            amount: crate::types::ability::CollectEvidenceAmount::Fixed(6),
+        };
         let composite = AbilityCost::Composite {
             costs: vec![
                 AbilityCost::Mana {
@@ -3411,7 +3416,10 @@ mod tests {
             alone.is_payable_for_replacement(state, P0, source),
             "a replacement's graveyard source is evidence"
         );
-        assert!(AbilityCost::CollectEvidence { amount: 3 }.is_payable_for_spell(state, P0, source));
+        assert!(AbilityCost::CollectEvidence {
+            amount: crate::types::ability::CollectEvidenceAmount::Fixed(3),
+        }
+        .is_payable_for_spell(state, P0, source));
     }
 
     /// CR 118.3: #542 Loch Mare — `RemoveCounter` with `CounterMatch::Any`

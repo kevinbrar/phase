@@ -4103,7 +4103,9 @@ mod tests {
                 materials: TargetFilter::Any,
                 count: CostObjectCount::default(),
             },
-            AbilityCost::CollectEvidence { .. } => AbilityCost::CollectEvidence { amount: 1 },
+            AbilityCost::CollectEvidence { .. } => AbilityCost::CollectEvidence {
+                amount: crate::types::ability::CollectEvidenceAmount::Fixed(1),
+            },
             AbilityCost::ExileWithAggregate { .. } => AbilityCost::ExileWithAggregate {
                 filter: TargetFilter::Any,
                 function: crate::types::ability::AggregateFunction::Sum,
@@ -4227,7 +4229,9 @@ mod tests {
                 materials: TargetFilter::Any,
                 count: CostObjectCount::default(),
             },
-            AbilityCost::CollectEvidence { amount: 0 },
+            AbilityCost::CollectEvidence {
+                amount: crate::types::ability::CollectEvidenceAmount::Fixed(0),
+            },
             AbilityCost::ExileWithAggregate {
                 filter: TargetFilter::Any,
                 function: crate::types::ability::AggregateFunction::Sum,

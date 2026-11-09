@@ -7590,7 +7590,9 @@ mod tests {
         let ReplacementMode::MayCost { cost, .. } = &mut replacements[0].mode else {
             unreachable!("mox_diamond_like_spell carries a MayCost replacement");
         };
-        *cost = AbilityCost::CollectEvidence { amount };
+        *cost = AbilityCost::CollectEvidence {
+            amount: engine::types::ability::CollectEvidenceAmount::Fixed(amount),
+        };
         let id = create_object(
             state,
             CardId(state.next_object_id),

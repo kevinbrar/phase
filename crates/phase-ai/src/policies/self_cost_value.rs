@@ -1358,7 +1358,12 @@ mod tests {
         }));
         // A Composite of only out-of-scope costs stays out of scope.
         assert!(!self_cost_in_scope(&AbilityCost::Composite {
-            costs: vec![AbilityCost::Tap, AbilityCost::CollectEvidence { amount: 2 },],
+            costs: vec![
+                AbilityCost::Tap,
+                AbilityCost::CollectEvidence {
+                    amount: engine::types::ability::CollectEvidenceAmount::Fixed(2),
+                },
+            ],
         }));
         // Selective, not blanket: a graveyard/hand exile IS in scope.
         assert!(self_cost_in_scope(&AbilityCost::Exile {
@@ -1375,7 +1380,12 @@ mod tests {
             &mut state,
             "Evidence Card",
             &[CoreType::Creature],
-            activated(gain_life(1), AbilityCost::CollectEvidence { amount: 3 }),
+            activated(
+                gain_life(1),
+                AbilityCost::CollectEvidence {
+                    amount: engine::types::ability::CollectEvidenceAmount::Fixed(3),
+                },
+            ),
         );
         assert_neutral(
             &verdict_for(&state, source, plain_features()),

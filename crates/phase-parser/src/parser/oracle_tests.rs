@@ -9603,7 +9603,9 @@ fn conspiracy_unraveler_collect_evidence_alternative_cost_static() {
     assert!(matches!(
         r.statics[0].mode,
         StaticMode::CastWithAlternativeCost {
-            cost: AbilityCost::CollectEvidence { amount: 10 },
+            cost: AbilityCost::CollectEvidence {
+                amount: crate::types::ability::CollectEvidenceAmount::Fixed(10),
+            },
             ..
         }
     ));
@@ -24273,7 +24275,9 @@ fn analyze_the_pollen_parses_collect_evidence_search_override() {
     assert_eq!(
         result.additional_cost,
         Some(AdditionalCost::Optional {
-            cost: AbilityCost::CollectEvidence { amount: 8 },
+            cost: AbilityCost::CollectEvidence {
+                amount: crate::types::ability::CollectEvidenceAmount::Fixed(8),
+            },
             repeatability: crate::types::ability::AdditionalCostRepeatability::Once,
         })
     );

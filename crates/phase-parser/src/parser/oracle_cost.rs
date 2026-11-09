@@ -29,11 +29,11 @@ use super::oracle_util::parse_number;
 use super::oracle_util::CountWord;
 use super::oracle_util::TextPair;
 use crate::types::ability::{
-    AbilityCost, AggregateFunction, AttachmentReferent, BeholdCostAction, ChoiceType, Comparator,
-    ControllerRef, CostReduction, CounterCostSelection, FilterProp, ObjectProperty, PlayerScope,
-    QuantityExpr, QuantityRef, SacrificeCost, SacrificeRequirement, TapCreaturesRequirement,
-    TargetFilter, TypedFilter, EXILE_COST_X, REMOVE_COUNTER_COST_ALL,
-    REMOVE_COUNTER_COST_ANY_NUMBER, REMOVE_COUNTER_COST_X,
+    AbilityCost, AggregateFunction, AttachmentReferent, BeholdCostAction, ChoiceType,
+    CollectEvidenceAmount, Comparator, ControllerRef, CostReduction, CounterCostSelection,
+    FilterProp, ObjectProperty, PlayerScope, QuantityExpr, QuantityRef, SacrificeCost,
+    SacrificeRequirement, TapCreaturesRequirement, TargetFilter, TypedFilter, EXILE_COST_X,
+    REMOVE_COUNTER_COST_ALL, REMOVE_COUNTER_COST_ANY_NUMBER, REMOVE_COUNTER_COST_X,
 };
 use crate::types::counter::parse_counter_match;
 use crate::types::zones::Zone;
@@ -1332,7 +1332,22 @@ fn parse_single_cost_in(text: &str, channel: CostChannel) -> AbilityCost {
     }) {
         let rest_lower = rest.to_lowercase();
         if let Some((n, _)) = parse_number(rest_lower.trim()) {
-            return AbilityCost::CollectEvidence { amount: n };
+            return AbilityCost::CollectEvidence {
+                amount: CollectEvidenceAmount::Fixed(n),
+            };
+        }
+        if nom_on_lower(rest, &rest_lower, |i| {
+            all_consuming(value((), terminated(tag("x"), opt(tag("."))))).parse(i)
+        })
+        .is_some()
+        {
+            return AbilityCost::CollectEvidence {
+                amount: CollectEvidenceAmount::Quantity(QuantityExpr::Ref {
+                    qty: QuantityRef::Variable {
+                        name: "X".to_string(),
+                    },
+                }),
+            };
         }
     }
 
@@ -5007,7 +5022,9 @@ mod tests {
     fn cost_collect_evidence() {
         assert_eq!(
             parse_oracle_cost("Collect evidence 8"),
-            AbilityCost::CollectEvidence { amount: 8 }
+            AbilityCost::CollectEvidence {
+                amount: CollectEvidenceAmount::Fixed(8)
+            }
         );
     }
 

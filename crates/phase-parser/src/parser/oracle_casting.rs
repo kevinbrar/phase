@@ -18,8 +18,8 @@ use super::oracle_saga::is_saga_chapter;
 use super::oracle_util::{parse_mana_symbols, parse_ordinal, TextPair};
 use crate::parser::oracle_condition::parse_restriction_condition;
 use crate::types::ability::{
-    AbilityCost, AdditionalCost, CastingRestriction, Comparator, CountScope, ParsedCondition,
-    QuantityExpr, QuantityRef, SpellCastingOption, TargetFilter,
+    AbilityCost, AdditionalCost, CastingRestriction, CollectEvidenceAmount, Comparator, CountScope,
+    ParsedCondition, QuantityExpr, QuantityRef, SpellCastingOption, TargetFilter,
 };
 use crate::types::mana::ManaColor;
 
@@ -94,6 +94,28 @@ pub fn parse_additional_cost_line(lower: &str, raw: &str) -> Option<AdditionalCo
     let tp = tp.trim_end_matches('.');
     let body_lower = tp.lower;
     let body_raw = tp.original;
+
+    // CR 601.2c -> 601.2f + CR 202.3: Resolve a Collect Evidence X
+    // threshold defined by the mana values of the chosen targets only after
+    // the spell's target set has been announced.
+    if let Some(((), where_x)) = nom_on_lower(body_raw, body_lower, |input| {
+        value(
+            (),
+            tag::<_, _, OracleError<'_>>("collect evidence x, where x is "),
+        )
+        .parse(input)
+    }) {
+        let Some(quantity) =
+            super::oracle_effect::lower::parse_where_x_quantity_expression(where_x)
+        else {
+            return Some(AdditionalCost::Required(AbilityCost::Unimplemented {
+                description: body_raw.to_string(),
+            }));
+        };
+        return Some(AdditionalCost::Required(AbilityCost::CollectEvidence {
+            amount: CollectEvidenceAmount::Quantity(quantity),
+        }));
+    }
 
     // CR 701.4a: A spelled-out "choose … you control or reveal … from your hand"
     // behold cost (Monstrous Emergence) is a single cohesive cost whose internal

@@ -12093,6 +12093,28 @@ fn parse_where_x_quantity_with_owner(
 ) -> Option<QuantityExpr> {
     let expression = where_x.trim().trim_end_matches('.');
     let expression_lower = expression.to_ascii_lowercase();
+    // CR 601.2c -> 601.2f + CR 202.3: A cost-defining clause may aggregate
+    // the mana values of the permanents chosen as this spell's targets. The
+    // target set is not available until announcement, so preserve it as a
+    // TargetedObjects aggregate for the casting cost resolver.
+    if all_consuming(preceded(
+        tag::<_, _, OracleError<'_>>("the total mana value of "),
+        terminated(tag("the permanents"), tag(" this spell targets")),
+    ))
+    .parse(expression_lower.as_str())
+    .is_ok()
+    {
+        return Some(QuantityExpr::Ref {
+            qty: QuantityRef::PropertyAggregate(
+                PropertyAggregate::new(
+                    AggregateFunction::Sum,
+                    ObjectProperty::ManaValue,
+                    CardTypeSetSource::TargetedObjects { slot: None },
+                )
+                .expect("targeted object sets support mana-value aggregates"),
+            ),
+        });
+    }
     // CR 702.51c + CR 603.3: Knight-Errant of Eos reads the number of
     // creatures that convoked the spell which became this permanent. The
     // casting pipeline preserves that count through the zone change, so the
@@ -13531,6 +13553,9 @@ fn apply_where_x_to_ability_cost(
         // (the nested effect reports its own unrepresentable where-X binding by
         // rewriting itself to `Effect::unimplemented`, so no `unbound` plumbing
         // is needed here)
+        AbilityCost::CollectEvidence {
+            amount: crate::types::ability::CollectEvidenceAmount::Quantity(amount),
+        } => bind_where_x_quantity(amount, where_x, unbound),
         // No X-bearing `QuantityExpr` amount to bind: fixed integer counts
         // (`Loyalty`, `Mill`, `Blight`, counts on Sacrifice/Exile/…) or a static
         // `ManaCost`/object filter that this where-X mana-value clause does not
@@ -13546,7 +13571,9 @@ fn apply_where_x_to_ability_cost(
         | AbilityCost::Sacrifice(_)
         | AbilityCost::Exile { .. }
         | AbilityCost::ExileMaterials { .. }
-        | AbilityCost::CollectEvidence { .. }
+        | AbilityCost::CollectEvidence {
+            amount: crate::types::ability::CollectEvidenceAmount::Fixed(_),
+        }
         // CR 117.1: `ExileWithAggregate`'s threshold is a fixed `i32` and its
         // filter is static — no where-X `QuantityExpr` amount to bind.
         | AbilityCost::ExileWithAggregate { .. }

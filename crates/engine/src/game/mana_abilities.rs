@@ -2185,7 +2185,7 @@ fn can_activate_mana_ability_by_simulation(
 // CR 701.59: collect-evidence amount inside a (possibly composite) mana-ability cost.
 pub(crate) fn collect_evidence_cost_amount(cost: &AbilityCost) -> Option<u32> {
     match cost {
-        AbilityCost::CollectEvidence { amount } => Some(*amount),
+        AbilityCost::CollectEvidence { amount } => amount.fixed_value(),
         AbilityCost::Composite { costs } => costs.iter().find_map(collect_evidence_cost_amount),
         _ => None,
     }

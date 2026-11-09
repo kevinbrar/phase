@@ -11788,8 +11788,8 @@ pub enum CardTypeSetSource {
     /// why it is NOT `Objects { filter: ParentTarget }` — that variant is a
     /// zone-derived board census and would miss a graveyard target.
     TargetedObjects {
-        /// `None` = every object target; `Some(i)` = the i-th slot, mirroring
-        /// `TargetFilter::ParentTargetSlot { index }`.
+        /// `None` = every object target declared anywhere in the ability chain;
+        /// `Some(i)` = the i-th slot, mirroring `TargetFilter::ParentTargetSlot { index }`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         slot: Option<usize>,
     },
@@ -11813,10 +11813,10 @@ pub enum CardTypeSetSource {
 }
 
 impl CardTypeSetSource {
-    /// CR 608.2c + CR 115.1: the canonical [`TargetFilter`] a
-    /// [`CardTypeSetSource::TargetedObjects`] population denotes — `None` is
-    /// every object target (`ParentTarget`), `Some(i)` is the i-th slot
-    /// (`ParentTargetSlot { index }`), mirroring the target-slot axis exactly.
+    /// CR 608.2c + CR 115.1: the target-slot filter corresponding to a
+    /// [`CardTypeSetSource::TargetedObjects`] population. The unqualified
+    /// aggregate spans the whole declared ability chain; chain-aware readers
+    /// use `declared_targets_in_chain` rather than this root-target filter.
     ///
     /// Single authority for the population ≡ filter equivalence: every
     /// classifier that answers a filter-routed question about a population
@@ -18834,6 +18834,26 @@ impl<'de> serde::Deserialize<'de> for SacrificeCost {
     }
 }
 
+/// Amount required for a Collect Evidence cost.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CollectEvidenceAmount {
+    /// Legacy fixed thresholds keep their integer card-data representation.
+    Fixed(u32),
+    /// A target- or state-derived threshold is resolved at total-cost
+    /// determination, after the spell's targets have been chosen.
+    Quantity(QuantityExpr),
+}
+
+impl CollectEvidenceAmount {
+    pub fn fixed_value(&self) -> Option<u32> {
+        match self {
+            Self::Fixed(amount) => Some(*amount),
+            Self::Quantity(_) => None,
+        }
+    }
+}
+
 /// Cost to activate an ability.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -18904,9 +18924,9 @@ pub enum AbilityCost {
         count: CostObjectCount,
     },
     /// CR 701.59a / CR 702.163a: Exile cards from your graveyard with total mana value
-    /// at least N as a collect evidence cost.
+    /// at least the fixed or dynamically resolved amount.
     CollectEvidence {
-        amount: u32,
+        amount: CollectEvidenceAmount,
     },
     /// CR 117.1 + CR 118.3 + CR 601.2b: Exile *any number* of cards matching
     /// `filter` from `zone` as a cost, where the aggregate `function` of
@@ -48787,7 +48807,9 @@ mod tests {
                 ),
                 (
                     "collect_evidence",
-                    AbilityCost::CollectEvidence { amount: 4 },
+                    AbilityCost::CollectEvidence {
+                        amount: CollectEvidenceAmount::Fixed(4),
+                    },
                     vec![CostCategory::ExilesCards],
                 ),
                 (

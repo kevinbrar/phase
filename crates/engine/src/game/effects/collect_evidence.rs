@@ -1,3 +1,4 @@
+use crate::types::ability::CollectEvidenceAmount;
 use crate::types::ability::{Effect, EffectError, EffectKind, ResolvedAbility};
 use crate::types::events::{GameEvent, PlayerActionKind};
 use crate::types::game_state::{
@@ -129,6 +130,30 @@ pub(crate) fn begin_cost_payment(
             source,
         },
     ))
+}
+
+/// CR 601.2c -> 601.2f + CR 701.59a: Resolve a target-dependent Collect
+/// Evidence threshold only after the cast's targets have been committed, then
+/// enter the same affordability and payment authority as fixed thresholds.
+pub(crate) fn begin_cost_payment_for_cost_amount(
+    state: &GameState,
+    player: PlayerId,
+    amount: &CollectEvidenceAmount,
+    pending_cast: PendingCast,
+    source: crate::types::game_state::SpellCostSource,
+) -> Result<WaitingFor, EngineError> {
+    let amount = match amount {
+        CollectEvidenceAmount::Fixed(amount) => *amount,
+        CollectEvidenceAmount::Quantity(quantity) => {
+            super::super::quantity::resolve_quantity_with_targets(
+                state,
+                quantity,
+                &pending_cast.ability,
+            )
+            .max(0) as u32
+        }
+    };
+    begin_cost_payment(state, player, amount, pending_cast, source)
 }
 
 /// CR 701.59a: Collect evidence N as an effect — prompt player to exile cards.
@@ -694,7 +719,12 @@ mod tests {
         // Composite[Tap, CollectEvidence{3}] — Cryptex's shape — recurses.
         assert_eq!(
             mana_abilities::collect_evidence_cost_amount(&AbilityCost::Composite {
-                costs: vec![AbilityCost::Tap, AbilityCost::CollectEvidence { amount: 3 },],
+                costs: vec![
+                    AbilityCost::Tap,
+                    AbilityCost::CollectEvidence {
+                        amount: CollectEvidenceAmount::Fixed(3),
+                    },
+                ],
             }),
             Some(3)
         );

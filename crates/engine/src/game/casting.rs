@@ -26554,9 +26554,11 @@ pub(super) fn find_exile_with_aggregate_cost(
 /// graveyard cards to exile), so the caller detours to
 /// `WaitingFor::CollectEvidenceChoice` and pays before the ability reaches the
 /// stack.
-pub(super) fn find_collect_evidence_activation_cost(cost: &AbilityCost) -> Option<u32> {
+pub(super) fn find_collect_evidence_activation_cost(
+    cost: &AbilityCost,
+) -> Option<crate::types::ability::CollectEvidenceAmount> {
     match cost {
-        AbilityCost::CollectEvidence { amount } => Some(*amount),
+        AbilityCost::CollectEvidence { amount } => Some(amount.clone()),
         AbilityCost::Composite { costs } => {
             costs.iter().find_map(find_collect_evidence_activation_cost)
         }
@@ -31118,10 +31120,10 @@ fn activate_with_cost_carrier(
                 );
                 pending.activation_phyrexian_intent = phyrexian_intent.clone();
                 pending.activation_cost = Some(cost.clone());
-                return super::effects::collect_evidence::begin_cost_payment(
+                return super::effects::collect_evidence::begin_cost_payment_for_cost_amount(
                     state,
                     player,
-                    amount,
+                    &amount,
                     pending,
                     SpellCostSource::Other,
                 );

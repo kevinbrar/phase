@@ -7086,10 +7086,10 @@ fn surface_next_interactive_activation_cost_leg(
                 .expect("checked activation cost is present"),
             |cost| matches!(cost, AbilityCost::CollectEvidence { .. }),
         );
-        return super::effects::collect_evidence::begin_cost_payment(
+        return super::effects::collect_evidence::begin_cost_payment_for_cost_amount(
             state,
             player,
-            amount,
+            &amount,
             pending,
             SpellCostSource::Other,
         )
@@ -11648,10 +11648,10 @@ fn pay_additional_cost_with_source(
             });
         }
         AbilityCost::CollectEvidence { amount } => {
-            return super::effects::collect_evidence::begin_cost_payment(
+            return super::effects::collect_evidence::begin_cost_payment_for_cost_amount(
                 state,
                 player,
-                amount,
+                &amount,
                 pending,
                 cost_source,
             );
@@ -31101,7 +31101,9 @@ its replicate cost was paid.)\nDraw a card.";
             ),
             (
                 "collect evidence",
-                AbilityCost::CollectEvidence { amount: 1 },
+                AbilityCost::CollectEvidence {
+                    amount: crate::types::ability::CollectEvidenceAmount::Fixed(1),
+                },
             ),
             (
                 "aggregate exile",

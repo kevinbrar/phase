@@ -807,15 +807,27 @@ fn visit_characteristic_leaf<'s>(
             // so the read below measures the SELECTED occurrence.
             match filter_ctx.ability {
                 Some(_) => {
-                    // Positional pins: each selected occurrence carries the
-                    // pin that selected it into the same pinned reader the
-                    // parked path uses — never a first-match re-derivation
-                    // by id.
-                    let selected = crate::game::filter::referenced_targets_with_pins_for_filter(
-                        state,
-                        &selector,
-                        filter_ctx.ability,
-                    );
+                    // CR 115.1 + CR 601.2c: an unqualified spell-target
+                    // aggregate reads every declared target slot across the
+                    // chain, not only the root effect's local targets.
+                    let selected = if slot.is_none() {
+                        crate::game::ability_utils::declared_target_entries_in_chain(
+                            filter_ctx.ability.unwrap(),
+                        )
+                        .into_iter()
+                        .map(|entry| (entry.target, entry.pin))
+                        .collect()
+                    } else {
+                        // Positional pins: each selected occurrence carries the
+                        // pin that selected it into the same pinned reader the
+                        // parked path uses — never a first-match re-derivation
+                        // by id.
+                        crate::game::filter::referenced_targets_with_pins_for_filter(
+                            state,
+                            &selector,
+                            filter_ctx.ability,
+                        )
+                    };
                     for (target, pin) in selected {
                         let TargetRef::Object(oid) = target else {
                             continue;

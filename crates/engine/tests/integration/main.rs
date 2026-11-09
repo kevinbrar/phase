@@ -260,6 +260,7 @@ mod uldaros_theorix;
 mod ultimate_spider_man_mass_counter_double;
 mod unstoppable_slasher_half_life;
 mod ureni_attack_trigger;
+mod urgent_necropsy;
 mod vengeful_ancestor_goaded_attack_trigger;
 mod viewer_projection_ingest_gate;
 mod void_winnower_announced_x;
